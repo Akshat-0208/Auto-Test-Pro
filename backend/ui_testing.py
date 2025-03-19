@@ -112,16 +112,145 @@ class UITester:
         forms = driver.find_elements(By.TAG_NAME, 'form')
         for form in forms:
             try:
-                # Test form submission
+                # Test form inputs individually
                 inputs = form.find_elements(By.TAG_NAME, 'input')
                 for input_field in inputs:
-                    input_type = input_field.get_attribute('type')
-                    if input_type in ['text', 'email', 'password']:
-                        input_field.send_keys('test')
+                    try:
+                        input_type = input_field.get_attribute('type') or 'text'
+                        element_html = input_field.get_attribute('outerHTML')
+                        
+                        # Skip button inputs as they're handled in _test_buttons
+                        if input_type in ['button', 'submit', 'reset']:
+                            continue
+                            
+                        # Get input value and other relevant attributes
+                        attributes = {
+                            'type': input_type,
+                            'name': input_field.get_attribute('name') or '',
+                            'placeholder': input_field.get_attribute('placeholder') or '',
+                            'value': input_field.get_attribute('value') or ''
+                        }
+                        
+                        is_visible = input_field.is_displayed()
+                        is_enabled = input_field.is_enabled()
+                        
+                        self.test_results.append({
+                            'type': 'input',
+                            'element': element_html,
+                            'elementType': 'input',
+                            'attributes': attributes,
+                            'status': 'passed' if (is_visible and is_enabled) else 'failed',
+                            'error': None if (is_visible and is_enabled) else 'Input field not visible or enabled'
+                        })
+                    except Exception as e:
+                        self.test_results.append({
+                            'type': 'input',
+                            'element': str(input_field),
+                            'elementType': 'input',
+                            'status': 'failed',
+                            'error': str(e)
+                        })
                 
+                # Also test select fields
+                selects = form.find_elements(By.TAG_NAME, 'select')
+                for select in selects:
+                    try:
+                        element_html = select.get_attribute('outerHTML')
+                        
+                        is_visible = select.is_displayed()
+                        is_enabled = select.is_enabled()
+                        
+                        self.test_results.append({
+                            'type': 'select',
+                            'element': element_html,
+                            'elementType': 'select',
+                            'status': 'passed' if (is_visible and is_enabled) else 'failed',
+                            'error': None if (is_visible and is_enabled) else 'Select field not visible or enabled'
+                        })
+                    except Exception as e:
+                        self.test_results.append({
+                            'type': 'select',
+                            'element': str(select),
+                            'elementType': 'select',
+                            'status': 'failed',
+                            'error': str(e)
+                        })
+                
+                # Test checkboxes and radio buttons
+                checkboxes = form.find_elements(By.XPATH, './/input[@type="checkbox"]')
+                radios = form.find_elements(By.XPATH, './/input[@type="radio"]')
+                
+                for checkbox in checkboxes:
+                    try:
+                        element_html = checkbox.get_attribute('outerHTML')
+                        value = checkbox.get_attribute('value') or ''
+                        label_element = self._find_associated_label(driver, checkbox)
+                        label_text = label_element.text if label_element else ''
+                        
+                        is_visible = checkbox.is_displayed()
+                        is_enabled = checkbox.is_enabled()
+                        
+                        self.test_results.append({
+                            'type': 'checkbox',
+                            'element': element_html,
+                            'elementType': 'input',
+                            'attributes': {
+                                'type': 'checkbox', 
+                                'value': value,
+                                'label': label_text
+                            },
+                            'status': 'passed' if (is_visible and is_enabled) else 'failed',
+                            'error': None if (is_visible and is_enabled) else 'Checkbox not visible or enabled'
+                        })
+                    except Exception as e:
+                        self.test_results.append({
+                            'type': 'checkbox',
+                            'element': str(checkbox),
+                            'elementType': 'input',
+                            'attributes': {'type': 'checkbox'},
+                            'status': 'failed',
+                            'error': str(e)
+                        })
+                
+                for radio in radios:
+                    try:
+                        element_html = radio.get_attribute('outerHTML')
+                        value = radio.get_attribute('value') or ''
+                        label_element = self._find_associated_label(driver, radio)
+                        label_text = label_element.text if label_element else ''
+                        
+                        is_visible = radio.is_displayed()
+                        is_enabled = radio.is_enabled()
+                        
+                        self.test_results.append({
+                            'type': 'radio',
+                            'element': element_html,
+                            'elementType': 'input',
+                            'attributes': {
+                                'type': 'radio',
+                                'value': value,
+                                'label': label_text
+                            },
+                            'status': 'passed' if (is_visible and is_enabled) else 'failed',
+                            'error': None if (is_visible and is_enabled) else 'Radio button not visible or enabled'
+                        })
+                    except Exception as e:
+                        self.test_results.append({
+                            'type': 'radio',
+                            'element': str(radio),
+                            'elementType': 'input',
+                            'attributes': {'type': 'radio'},
+                            'status': 'failed',
+                            'error': str(e)
+                        })
+                
+                # Just store the form ID and action, not the full HTML
+                form_id = form.get_attribute('id') or ''
+                form_action = form.get_attribute('action') or ''
                 self.test_results.append({
                     'type': 'form',
-                    'element': form.get_attribute('id') or 'unnamed_form',
+                    'element': f"Form ID: {form_id}, Action: {form_action}",
+                    'elementType': 'form',
                     'status': 'passed'
                 })
             except Exception as e:
@@ -131,16 +260,66 @@ class UITester:
                     'status': 'failed',
                     'error': str(e)
                 })
+                
+    def _find_associated_label(self, driver, element):
+        """Find label associated with an input element"""
+        try:
+            # Try to find label by input's id
+            element_id = element.get_attribute('id')
+            if element_id:
+                label = driver.find_element(By.CSS_SELECTOR, f"label[for='{element_id}']")
+                if label:
+                    return label
+                    
+            # Try to find parent label (where input is inside label)
+            parent = element.find_element(By.XPATH, "./ancestor::label")
+            if parent:
+                return parent
+        except:
+            pass
+        return None
 
     def _test_buttons(self, driver):
         buttons = driver.find_elements(By.TAG_NAME, 'button')
-        for button in buttons:
+        button_inputs = driver.find_elements(By.XPATH, '//input[@type="button"]')
+        submit_inputs = driver.find_elements(By.XPATH, '//input[@type="submit"]')
+        
+        all_buttons = buttons + button_inputs + submit_inputs
+        
+        for button in all_buttons:
             try:
-                # Test button click
-                button.click()
+                # Get element details for better visualization
+                element_html = button.get_attribute('outerHTML')
+                element_type = button.tag_name
+                
+                # Check if button contains SVG
+                has_svg = False
+                try:
+                    svg_element = button.find_element(By.TAG_NAME, 'svg')
+                    has_svg = svg_element is not None
+                except:
+                    has_svg = False
+                
+                # Get button text content - try multiple attributes
+                inner_html = button.get_attribute('innerText') or button.get_attribute('textContent')
+                if not inner_html and element_type == 'input':
+                    inner_html = button.get_attribute('value')
+                inner_html = inner_html.strip() if inner_html else 'Button'
+                
+                # For empty text but with SVG, set a placeholder
+                if not inner_html.strip() and has_svg:
+                    inner_html = "Icon Button"
+                
+                # Test button click - use JavaScript to avoid actual navigation
+                driver.execute_script("arguments[0].scrollIntoView(true);", button)
+                
+                # Store button information
                 self.test_results.append({
                     'type': 'button',
-                    'element': button.get_attribute('id') or 'unnamed_button',
+                    'element': element_html,
+                    'elementType': element_type,
+                    'innerHtml': inner_html,
+                    'hasSvg': has_svg,
                     'status': 'passed'
                 })
             except Exception as e:
@@ -156,16 +335,34 @@ class UITester:
         for img in images:
             try:
                 src = img.get_attribute('src')
-                if src:
-                    self.test_results.append({
-                        'type': 'image',
-                        'element': src,
-                        'status': 'passed' if self._check_image(src) else 'failed'
-                    })
+                alt = img.get_attribute('alt') or ''
+                element_html = img.get_attribute('outerHTML')
+                
+                # Get the base URL for relative image paths
+                base_url = self.url
+                
+                is_image_loaded = driver.execute_script(
+                    "return arguments[0].complete && " +
+                    "typeof arguments[0].naturalWidth != 'undefined' && " +
+                    "arguments[0].naturalWidth > 0", img)
+                
+                status = 'passed' if (is_image_loaded and self._check_image(src)) else 'failed'
+                error = None if status == 'passed' else 'Image failed to load'
+                
+                self.test_results.append({
+                    'type': 'image',
+                    'element': element_html,
+                    'elementType': 'img',
+                    'src': src,
+                    'attributes': {'alt': alt},
+                    'status': status,
+                    'error': error
+                })
             except Exception as e:
                 self.test_results.append({
                     'type': 'image',
                     'element': str(img),
+                    'elementType': 'img',
                     'status': 'failed',
                     'error': str(e)
                 })

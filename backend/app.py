@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 from ui_testing import UITester
 from api_testing import APITester
+from bson.objectid import ObjectId
 
 # Load environment variables
 load_dotenv()
@@ -91,7 +92,12 @@ def start_api_test():
 @app.route('/api/results', methods=['GET'])
 def get_results():
     try:
-        results = list(results_collection.find({}, {'_id': 0}))
+        # Modify to add testId based on the _id
+        results = list(results_collection.find())
+        # Convert ObjectId to string and add as testId
+        for result in results:
+            result['testId'] = str(result['_id'])
+            del result['_id']  # Still remove _id to avoid serialization issues
         return jsonify(results)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -103,6 +109,24 @@ def get_test_result(test_id):
         if not result:
             return jsonify({'error': 'Test result not found'}), 404
         return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/results/<test_id>', methods=['DELETE'])
+def delete_test_result(test_id):
+    try:
+        # Try to convert the test_id to ObjectId
+        try:
+            object_id = ObjectId(test_id)
+            result = results_collection.delete_one({'_id': object_id})
+        except:
+            # If test_id is not a valid ObjectId, try to delete by testId
+            result = results_collection.delete_one({'testId': test_id})
+            
+        if result.deleted_count == 0:
+            return jsonify({'error': 'Test result not found'}), 404
+            
+        return jsonify({'message': 'Test result deleted successfully'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

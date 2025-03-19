@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Image as ImageIcon, Globe } from "lucide-react";
 
 interface TestResult {
 	type: string;
@@ -18,6 +19,13 @@ interface TestResult {
 	averageTime?: number;
 	minTime?: number;
 	maxTime?: number;
+	elementType?: string;
+	innerHtml?: string;
+	attributes?: Record<string, string>;
+	src?: string;
+	contentType?: string;
+	responsePreview?: string;
+	hasSvg?: boolean;
 }
 
 interface TestResultDetailsProps {
@@ -49,12 +57,287 @@ export function TestResultDetails({
 		return `${seconds.toFixed(2)}s`;
 	};
 
+	// Function to render element preview based on element type
+	const renderElementPreview = (test: TestResult) => {
+		// Extract element type from the element string if not provided directly
+		const elementType =
+			test.elementType ||
+			test.element?.match(/<([a-z]+)[^>]*>/i)?.[1]?.toLowerCase() ||
+			"";
+
+		// Extract inner HTML or text if available
+		const innerHtml =
+			test.innerHtml || test.element?.match(/>([^<]*)</)?.[1] || "";
+
+		// Check if element is an image
+		if (elementType === "img" || test.element?.includes("<img")) {
+			let src =
+				test.src || test.element?.match(/src=["']([^"']+)["']/i)?.[1];
+
+			// Handle relative URLs by prepending the base URL
+			if (src && src.startsWith("/")) {
+				// Extract domain from the test URL
+				const urlObj = new URL(result.url);
+				const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+				src = baseUrl + src;
+			}
+
+			if (src) {
+				return (
+					<div className="relative group mt-2 inline-block">
+						<div className="flex items-center bg-muted rounded p-2">
+							<ImageIcon className="h-5 w-5 mr-2" />
+							<span className="text-sm">Image Preview</span>
+						</div>
+						<div className="absolute left-0 top-full mt-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 invisible group-hover:visible">
+							<div className="bg-popover shadow-lg rounded-md p-1 border">
+								<img
+									src={src}
+									alt="Element preview"
+									className="max-w-[200px] max-h-[200px] object-contain"
+									onError={(e) => {
+										(
+											e.target as HTMLImageElement
+										).style.display = "none";
+										(
+											e.target as HTMLImageElement
+										).nextSibling!.textContent =
+											"Failed to load image";
+									}}
+								/>
+								<div className="text-xs text-destructive"></div>
+							</div>
+						</div>
+					</div>
+				);
+			}
+		}
+
+		// For buttons
+		else if (
+			elementType === "button" ||
+			test.element?.includes("<button")
+		) {
+			// Check if button has SVG content from the backend or fallback to HTML check
+			const hasSvg =
+				test.hasSvg === true ||
+				(!test.hasSvg && test.element?.includes("<svg"));
+
+			// Get button text: prioritize innerHtml, then extract value attribute properly
+			let buttonText = innerHtml;
+
+			// If no innerHtml but has value attribute, extract it properly handling quotes
+			if (!buttonText) {
+				const valueMatch = test.element?.match(
+					/value=["']([^"']*(?:(?:"|')[^"']*(?:"|')[^"']*)*)["']/i
+				);
+				if (valueMatch && valueMatch[1]) {
+					buttonText = valueMatch[1];
+				} else {
+					buttonText = test.attributes?.value || "Button";
+				}
+			}
+
+			return (
+				<div className="mt-2">
+					<div className="text-sm font-medium mb-1">
+						Button Preview:
+					</div>
+					<button
+						className="px-3 py-1 border rounded text-sm bg-secondary hover:bg-secondary/80 cursor-default"
+						onClick={(e) => e.preventDefault()}
+					>
+						{hasSvg ? (
+							<div className="flex items-center justify-center">
+								<div className="text-xs bg-primary/10 p-1 rounded">
+									<svg
+										viewBox="0 0 24 24"
+										className="h-4 w-4"
+										stroke="currentColor"
+										fill="none"
+									>
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth="2"
+											d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14"
+										/>
+									</svg>
+								</div>
+								<span className="ml-1">
+									{buttonText === "Button" ||
+									buttonText === "Icon Button"
+										? "SVG Icon"
+										: buttonText}
+								</span>
+							</div>
+						) : (
+							buttonText
+						)}
+					</button>
+				</div>
+			);
+		}
+
+		// For inputs
+		else if (elementType === "input" || test.element?.includes("<input")) {
+			const inputType =
+				test.attributes?.type ||
+				test.element?.match(/type=["']([^"']+)["']/i)?.[1] ||
+				"text";
+
+			// Get input value or placeholder with improved parsing
+			let inputValue = "";
+
+			// Try to extract from the element string with better handling of quotes
+			const valueMatch = test.element?.match(
+				/value=["']([^"']*(?:(?:"|')[^"']*(?:"|')[^"']*)*)["']/i
+			);
+			if (valueMatch && valueMatch[1]) {
+				inputValue = valueMatch[1];
+			} else {
+				inputValue =
+					test.attributes?.value ||
+					test.attributes?.placeholder ||
+					"";
+			}
+
+			if (inputType === "checkbox" || inputType === "radio") {
+				// Get label text from attributes or default to type
+				const labelText =
+					test.attributes?.label ||
+					inputValue ||
+					inputType.charAt(0).toUpperCase() + inputType.slice(1);
+
+				return (
+					<div className="mt-2">
+						<div className="text-sm font-medium mb-1">
+							{inputType.charAt(0).toUpperCase() +
+								inputType.slice(1)}{" "}
+							Input:
+						</div>
+						<input
+							type={inputType}
+							disabled
+							className="cursor-default"
+						/>
+						<span className="text-sm ml-2">{labelText}</span>
+					</div>
+				);
+			}
+
+			return (
+				<div className="mt-2">
+					<div className="text-sm font-medium mb-1">
+						Input Preview:
+					</div>
+					<input
+						type={inputType}
+						value={inputValue}
+						placeholder={
+							!inputValue
+								? inputType.charAt(0).toUpperCase() +
+								  inputType.slice(1) +
+								  " input"
+								: ""
+						}
+						disabled
+						className="px-3 py-1 border rounded text-sm bg-muted cursor-default w-64"
+					/>
+				</div>
+			);
+		}
+
+		// For select dropdowns
+		else if (
+			elementType === "select" ||
+			test.element?.includes("<select")
+		) {
+			return (
+				<div className="mt-2">
+					<div className="text-sm font-medium mb-1">
+						Select Dropdown:
+					</div>
+					<select
+						disabled
+						className="px-3 py-1 border rounded text-sm bg-muted cursor-default"
+					>
+						<option>Dropdown options</option>
+					</select>
+				</div>
+			);
+		}
+
+		// For textarea
+		else if (
+			elementType === "textarea" ||
+			test.element?.includes("<textarea")
+		) {
+			return (
+				<div className="mt-2">
+					<div className="text-sm font-medium mb-1">Textarea:</div>
+					<textarea
+						disabled
+						placeholder="Textarea content"
+						className="px-3 py-1 border rounded text-sm bg-muted cursor-default w-64 h-20"
+					></textarea>
+				</div>
+			);
+		}
+
+		// For API endpoints
+		else if (elementType === "endpoint" && test.responsePreview) {
+			const isJson = test.contentType?.includes("application/json");
+
+			return (
+				<div className="mt-2">
+					<div className="flex items-center font-medium mb-1">
+						<Globe className="h-4 w-4 mr-1" />
+						<span className="text-sm">API Response:</span>
+						{test.contentType && (
+							<Badge variant="outline" className="ml-2 text-xs">
+								{test.contentType.split(";")[0]}
+							</Badge>
+						)}
+					</div>
+					<div className="bg-muted rounded-md p-3 mt-1 text-sm overflow-x-auto">
+						<pre
+							className={`${
+								isJson ? "text-primary" : ""
+							} text-xs whitespace-pre-wrap break-words`}
+						>
+							{test.responsePreview}
+						</pre>
+					</div>
+				</div>
+			);
+		}
+
+		// Default - no special rendering
+		return null;
+	};
+
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-w-[95vw] md:max-w-4xl h-[90vh] overflow-hidden">
 				<DialogHeader>
-					<DialogTitle className="text-base md:text-lg line-clamp-1 overflow-ellipsis">
-						Test Results for {result.url}
+					<DialogTitle className="text-base md:text-lg relative group">
+						<span className="line-clamp-1 overflow-ellipsis">
+							Test Results for{" "}
+							{result.url.length > 40 ? (
+								<>
+									{result.url.substring(0, 40)}
+									<span className="text-primary">...</span>
+									<div className="absolute left-0 top-full mt-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 invisible group-hover:visible">
+										<div className="bg-popover shadow-md rounded-md p-2 text-sm border max-w-md break-all">
+											{result.url}
+										</div>
+									</div>
+								</>
+							) : (
+								result.url
+							)}
+						</span>
 					</DialogTitle>
 				</DialogHeader>
 				<div className="space-y-4 h-full overflow-hidden flex flex-col">
@@ -128,9 +411,18 @@ export function TestResultDetails({
 													{test.status}
 												</Badge>
 											</div>
-											<p className="text-sm text-muted-foreground mb-2 break-all">
-												Element: {test.element}
-											</p>
+
+											{/* Element Information */}
+											<div className="mb-3">
+												<p className="text-sm text-muted-foreground mb-2 break-all">
+													Element: {test.element}
+												</p>
+
+												{/* Element Preview */}
+												{renderElementPreview(test)}
+											</div>
+
+											{/* API-specific information */}
 											{test.statusCode && (
 												<p className="text-sm text-muted-foreground mb-2">
 													Status Code:{" "}

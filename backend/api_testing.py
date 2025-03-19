@@ -81,22 +81,59 @@ class APITester:
                 timeout=10
             )
             duration = time.time() - start_time
+            
+            # Get response type and sample content
+            content_type = response.headers.get('Content-Type', '')
+            response_preview = self._get_response_preview(response)
 
             self.test_results.append({
                 'type': 'basic_request',
+                'element': self.endpoint,
+                'elementType': 'endpoint',
                 'method': self.config.get('method', 'GET'),
                 'status': 'passed' if response.status_code < 400 else 'failed',
                 'statusCode': response.status_code,
                 'duration': duration,
-                'responseSize': len(response.content)
+                'responseSize': len(response.content),
+                'contentType': content_type,
+                'responsePreview': response_preview
             })
         except Exception as e:
             self.test_results.append({
                 'type': 'basic_request',
+                'element': self.endpoint,
+                'elementType': 'endpoint',
                 'method': self.config.get('method', 'GET'),
                 'status': 'failed',
                 'error': str(e)
             })
+            
+    def _get_response_preview(self, response):
+        """Extract a preview of the response for visualization"""
+        preview = ""
+        content_type = response.headers.get('Content-Type', '').lower()
+        
+        try:
+            if 'application/json' in content_type:
+                # For JSON responses, pretty print a sample
+                json_data = response.json()
+                preview = json.dumps(json_data, indent=2)
+                # Limit the preview size
+                if len(preview) > 500:
+                    preview = preview[:500] + "..."
+            elif 'text/html' in content_type:
+                # For HTML, return a truncated version
+                preview = response.text[:500] + "..." if len(response.text) > 500 else response.text
+            elif 'text/' in content_type:
+                # For other text responses
+                preview = response.text[:500] + "..." if len(response.text) > 500 else response.text
+            else:
+                # For binary content
+                preview = f"Binary content ({len(response.content)} bytes)"
+        except Exception as e:
+            preview = f"Could not parse response: {str(e)}"
+            
+        return preview
 
     def _test_query_parameters(self):
         parsed_url = urlparse(self.endpoint)
@@ -111,6 +148,13 @@ class APITester:
 
         for param_type, params in test_params.items():
             try:
+                # Build the test URL with parameters for display
+                base_url = parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path
+                param_strings = []
+                for key, value in params.items():
+                    param_strings.append(f"{key}={value}")
+                test_url = base_url + "?" + "&".join(param_strings)
+                
                 start_time = time.time()
                 response = requests.request(
                     method=self.config.get('method', 'GET'),
@@ -119,17 +163,27 @@ class APITester:
                     timeout=10
                 )
                 duration = time.time() - start_time
+                
+                # Get response type and sample content
+                content_type = response.headers.get('Content-Type', '')
+                response_preview = self._get_response_preview(response)
 
                 self.test_results.append({
                     'type': 'query_parameters',
+                    'element': test_url,
+                    'elementType': 'endpoint',
                     'parameters': params,
                     'status': 'passed' if response.status_code < 400 else 'failed',
                     'statusCode': response.status_code,
-                    'duration': duration
+                    'duration': duration,
+                    'contentType': content_type,
+                    'responsePreview': response_preview
                 })
             except Exception as e:
                 self.test_results.append({
                     'type': 'query_parameters',
+                    'element': self.endpoint,
+                    'elementType': 'endpoint',
                     'parameters': params,
                     'status': 'failed',
                     'error': str(e)
@@ -153,17 +207,31 @@ class APITester:
                     timeout=10
                 )
                 duration = time.time() - start_time
+                
+                # Format headers for display
+                header_str = ", ".join([f"{k}: {v}" for k, v in headers.items()])
+                element_display = f"{self.endpoint} [Headers: {header_str}]"
+                
+                # Get response type and sample content
+                content_type = response.headers.get('Content-Type', '')
+                response_preview = self._get_response_preview(response)
 
                 self.test_results.append({
                     'type': 'headers',
+                    'element': element_display,
+                    'elementType': 'endpoint',
                     'headers': headers,
                     'status': 'passed' if response.status_code < 400 else 'failed',
                     'statusCode': response.status_code,
-                    'duration': duration
+                    'duration': duration,
+                    'contentType': content_type,
+                    'responsePreview': response_preview
                 })
             except Exception as e:
                 self.test_results.append({
                     'type': 'headers',
+                    'element': self.endpoint,
+                    'elementType': 'endpoint',
                     'headers': headers,
                     'status': 'failed',
                     'error': str(e)
@@ -171,6 +239,8 @@ class APITester:
 
     def _test_response_time(self):
         response_times = []
+        responses = []
+        
         for _ in range(5):  # Test 5 times
             try:
                 start_time = time.time()
@@ -181,9 +251,12 @@ class APITester:
                 )
                 duration = time.time() - start_time
                 response_times.append(duration)
+                responses.append(response)
             except Exception as e:
                 self.test_results.append({
                     'type': 'response_time',
+                    'element': self.endpoint,
+                    'elementType': 'endpoint',
                     'status': 'failed',
                     'error': str(e)
                 })
@@ -191,12 +264,25 @@ class APITester:
 
         if response_times:
             avg_time = sum(response_times) / len(response_times)
+            
+            # Get response type and sample content from the last response
+            last_response = responses[-1]
+            content_type = last_response.headers.get('Content-Type', '')
+            response_preview = self._get_response_preview(last_response)
+            
+            # Format element display to show timing information
+            element_display = f"{self.endpoint} [Response Time Test]"
+            
             self.test_results.append({
                 'type': 'response_time',
+                'element': element_display,
+                'elementType': 'endpoint',
                 'status': 'passed',
                 'averageTime': avg_time,
                 'minTime': min(response_times),
-                'maxTime': max(response_times)
+                'maxTime': max(response_times),
+                'contentType': content_type,
+                'responsePreview': response_preview
             })
 
     def _test_error_cases(self):
@@ -209,6 +295,10 @@ class APITester:
 
         for case in error_cases:
             try:
+                # Format case for display
+                case_str = ", ".join([f"{k}: {v}" for k, v in case.items()])
+                element_display = f"{self.endpoint} [Error Test: {case_str}]"
+                
                 start_time = time.time()
                 response = requests.request(
                     method=self.config.get('method', 'GET'),
@@ -217,17 +307,30 @@ class APITester:
                     timeout=10
                 )
                 duration = time.time() - start_time
+                
+                # Get response type and sample content
+                content_type = response.headers.get('Content-Type', '')
+                response_preview = self._get_response_preview(response)
 
                 self.test_results.append({
                     'type': 'error_case',
+                    'element': element_display,
+                    'elementType': 'endpoint',
                     'case': case,
                     'status': 'passed' if response.status_code >= 400 else 'failed',
                     'statusCode': response.status_code,
-                    'duration': duration
+                    'duration': duration,
+                    'contentType': content_type,
+                    'responsePreview': response_preview
                 })
             except Exception as e:
+                # For exceptions, it's expected behavior in error testing
+                element_display = f"{self.endpoint} [Error Test: {', '.join([f'{k}: {v}' for k, v in case.items()])}]"
+                
                 self.test_results.append({
                     'type': 'error_case',
+                    'element': element_display,
+                    'elementType': 'endpoint',
                     'case': case,
                     'status': 'passed',  # Expected to fail
                     'error': str(e)
