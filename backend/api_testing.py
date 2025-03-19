@@ -74,9 +74,10 @@ class APITester:
 
     def _test_basic_request(self):
         try:
+            request_method = self.config.get('method', 'GET')
             start_time = time.time()
             response = requests.request(
-                method=self.config.get('method', 'GET'),
+                method=request_method,
                 url=self.endpoint,
                 timeout=10
             )
@@ -90,7 +91,8 @@ class APITester:
                 'type': 'basic_request',
                 'element': self.endpoint,
                 'elementType': 'endpoint',
-                'method': self.config.get('method', 'GET'),
+                'endpoint': self.endpoint,
+                'requestType': request_method,
                 'status': 'passed' if response.status_code < 400 else 'failed',
                 'statusCode': response.status_code,
                 'duration': duration,
@@ -99,11 +101,13 @@ class APITester:
                 'responsePreview': response_preview
             })
         except Exception as e:
+            request_method = self.config.get('method', 'GET')
             self.test_results.append({
                 'type': 'basic_request',
                 'element': self.endpoint,
                 'elementType': 'endpoint',
-                'method': self.config.get('method', 'GET'),
+                'endpoint': self.endpoint,
+                'requestType': request_method,
                 'status': 'failed',
                 'error': str(e)
             })
@@ -138,6 +142,7 @@ class APITester:
     def _test_query_parameters(self):
         parsed_url = urlparse(self.endpoint)
         query_params = parse_qs(parsed_url.query)
+        request_method = self.config.get('method', 'GET')
 
         # Test with different parameter combinations
         test_params = {
@@ -157,7 +162,7 @@ class APITester:
                 
                 start_time = time.time()
                 response = requests.request(
-                    method=self.config.get('method', 'GET'),
+                    method=request_method,
                     url=self.endpoint,
                     params=params,
                     timeout=10
@@ -172,6 +177,8 @@ class APITester:
                     'type': 'query_parameters',
                     'element': test_url,
                     'elementType': 'endpoint',
+                    'endpoint': test_url,
+                    'requestType': request_method,
                     'parameters': params,
                     'status': 'passed' if response.status_code < 400 else 'failed',
                     'statusCode': response.status_code,
@@ -184,12 +191,15 @@ class APITester:
                     'type': 'query_parameters',
                     'element': self.endpoint,
                     'elementType': 'endpoint',
+                    'endpoint': self.endpoint,
+                    'requestType': request_method,
                     'parameters': params,
                     'status': 'failed',
                     'error': str(e)
                 })
 
     def _test_headers(self):
+        request_method = self.config.get('method', 'GET')
         test_headers = [
             {'Accept': 'application/json'},
             {'Accept': 'application/xml'},
@@ -201,7 +211,7 @@ class APITester:
             try:
                 start_time = time.time()
                 response = requests.request(
-                    method=self.config.get('method', 'GET'),
+                    method=request_method,
                     url=self.endpoint,
                     headers=headers,
                     timeout=10
@@ -220,6 +230,8 @@ class APITester:
                     'type': 'headers',
                     'element': element_display,
                     'elementType': 'endpoint',
+                    'endpoint': self.endpoint,
+                    'requestType': request_method,
                     'headers': headers,
                     'status': 'passed' if response.status_code < 400 else 'failed',
                     'statusCode': response.status_code,
@@ -232,12 +244,15 @@ class APITester:
                     'type': 'headers',
                     'element': self.endpoint,
                     'elementType': 'endpoint',
+                    'endpoint': self.endpoint,
+                    'requestType': request_method,
                     'headers': headers,
                     'status': 'failed',
                     'error': str(e)
                 })
 
     def _test_response_time(self):
+        request_method = self.config.get('method', 'GET')
         response_times = []
         responses = []
         
@@ -245,7 +260,7 @@ class APITester:
             try:
                 start_time = time.time()
                 response = requests.request(
-                    method=self.config.get('method', 'GET'),
+                    method=request_method,
                     url=self.endpoint,
                     timeout=10
                 )
@@ -257,6 +272,8 @@ class APITester:
                     'type': 'response_time',
                     'element': self.endpoint,
                     'elementType': 'endpoint',
+                    'endpoint': self.endpoint,
+                    'requestType': request_method,
                     'status': 'failed',
                     'error': str(e)
                 })
@@ -277,6 +294,8 @@ class APITester:
                 'type': 'response_time',
                 'element': element_display,
                 'elementType': 'endpoint',
+                'endpoint': self.endpoint,
+                'requestType': request_method,
                 'status': 'passed',
                 'averageTime': avg_time,
                 'minTime': min(response_times),
@@ -286,6 +305,7 @@ class APITester:
             })
 
     def _test_error_cases(self):
+        request_method = self.config.get('method', 'GET')
         error_cases = [
             {'url': 'invalid-url'},
             {'method': 'INVALID_METHOD'},
@@ -301,7 +321,7 @@ class APITester:
                 
                 start_time = time.time()
                 response = requests.request(
-                    method=self.config.get('method', 'GET'),
+                    method=request_method,
                     url=self.endpoint,
                     **case,
                     timeout=10
@@ -316,6 +336,8 @@ class APITester:
                     'type': 'error_case',
                     'element': element_display,
                     'elementType': 'endpoint',
+                    'endpoint': self.endpoint,
+                    'requestType': request_method if not 'method' in case else case['method'],
                     'case': case,
                     'status': 'passed' if response.status_code >= 400 else 'failed',
                     'statusCode': response.status_code,
@@ -324,14 +346,13 @@ class APITester:
                     'responsePreview': response_preview
                 })
             except Exception as e:
-                # For exceptions, it's expected behavior in error testing
-                element_display = f"{self.endpoint} [Error Test: {', '.join([f'{k}: {v}' for k, v in case.items()])}]"
-                
                 self.test_results.append({
                     'type': 'error_case',
                     'element': element_display,
                     'elementType': 'endpoint',
+                    'endpoint': self.endpoint,
+                    'requestType': request_method if not 'method' in case else case['method'],
                     'case': case,
-                    'status': 'passed',  # Expected to fail
+                    'status': 'passed',  # Exception means we successfully tested an error case
                     'error': str(e)
                 }) 

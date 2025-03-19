@@ -89,21 +89,83 @@ class UITester:
         finally:
             driver.quit()
 
+    def _find_associated_label(self, driver, element):
+        """Find label associated with an input element"""
+        try:
+            # Try to find label by input's id
+            element_id = element.get_attribute('id')
+            if element_id:
+                label = driver.find_element(By.CSS_SELECTOR, f"label[for='{element_id}']")
+                if label:
+                    return label
+                    
+            # Try to find parent label (where input is inside label)
+            parent = element.find_element(By.XPATH, "./ancestor::label")
+            if parent:
+                return parent
+        except:
+            pass
+        return None
+        
+    def _get_element_xpath(self, driver, element):
+        """Get the XPath of an element to show its position in the DOM"""
+        try:
+            # Use JavaScript to get the full XPath
+            xpath = driver.execute_script("""
+                function getElementXPath(element) {
+                    if (!element) return '';
+                    
+                    // If element has an ID, we can construct a simple path
+                    if (element.id) {
+                        return `//*[@id="${element.id}"]`;
+                    }
+                    
+                    // Check if this is the document body
+                    if (element.tagName.toLowerCase() === 'body') {
+                        return '/html/body';
+                    }
+                    
+                    // Get the element's position among siblings of the same tag
+                    let siblings = Array.from(element.parentNode.children).filter(
+                        e => e.tagName === element.tagName
+                    );
+                    
+                    let index = siblings.indexOf(element) + 1;
+                    
+                    // Recursively get the parent's path
+                    return getElementXPath(element.parentNode) + '/' + 
+                           element.tagName.toLowerCase() + 
+                           (siblings.length > 1 ? `[${index}]` : '');
+                }
+                return getElementXPath(arguments[0]);
+            """, element)
+            
+            return xpath
+        except Exception as e:
+            return "Unknown path"
+
     def _test_links(self, driver):
         links = driver.find_elements(By.TAG_NAME, 'a')
         for link in links:
             try:
                 href = link.get_attribute('href')
                 if href and href.startswith('http'):
+                    # Get element path
+                    element_path = self._get_element_xpath(driver, link)
+                    
                     self.test_results.append({
                         'type': 'link',
                         'element': href,
+                        'elementPath': element_path,
+                        'action': 'navigate',
                         'status': 'passed' if self._check_link(href) else 'failed'
                     })
             except Exception as e:
                 self.test_results.append({
                     'type': 'link',
                     'element': str(link),
+                    'elementPath': 'Unknown',
+                    'action': 'navigate',
                     'status': 'failed',
                     'error': str(e)
                 })
@@ -131,6 +193,20 @@ class UITester:
                             'value': input_field.get_attribute('value') or ''
                         }
                         
+                        # Get element path
+                        element_path = self._get_element_xpath(driver, input_field)
+                        
+                        # Determine the action based on input type
+                        action = 'type'
+                        if input_type == 'checkbox' or input_type == 'radio':
+                            action = 'check'
+                        elif input_type == 'file':
+                            action = 'upload'
+                        elif input_type == 'range':
+                            action = 'slide'
+                        elif input_type == 'color':
+                            action = 'select-color'
+                        
                         is_visible = input_field.is_displayed()
                         is_enabled = input_field.is_enabled()
                         
@@ -138,6 +214,8 @@ class UITester:
                             'type': 'input',
                             'element': element_html,
                             'elementType': 'input',
+                            'elementPath': element_path, 
+                            'action': action,
                             'attributes': attributes,
                             'status': 'passed' if (is_visible and is_enabled) else 'failed',
                             'error': None if (is_visible and is_enabled) else 'Input field not visible or enabled'
@@ -147,6 +225,8 @@ class UITester:
                             'type': 'input',
                             'element': str(input_field),
                             'elementType': 'input',
+                            'elementPath': 'Unknown',
+                            'action': 'interact',
                             'status': 'failed',
                             'error': str(e)
                         })
@@ -157,6 +237,9 @@ class UITester:
                     try:
                         element_html = select.get_attribute('outerHTML')
                         
+                        # Get element path
+                        element_path = self._get_element_xpath(driver, select)
+                        
                         is_visible = select.is_displayed()
                         is_enabled = select.is_enabled()
                         
@@ -164,6 +247,8 @@ class UITester:
                             'type': 'select',
                             'element': element_html,
                             'elementType': 'select',
+                            'elementPath': element_path,
+                            'action': 'select',
                             'status': 'passed' if (is_visible and is_enabled) else 'failed',
                             'error': None if (is_visible and is_enabled) else 'Select field not visible or enabled'
                         })
@@ -172,6 +257,8 @@ class UITester:
                             'type': 'select',
                             'element': str(select),
                             'elementType': 'select',
+                            'elementPath': 'Unknown',
+                            'action': 'select',
                             'status': 'failed',
                             'error': str(e)
                         })
@@ -187,6 +274,9 @@ class UITester:
                         label_element = self._find_associated_label(driver, checkbox)
                         label_text = label_element.text if label_element else ''
                         
+                        # Get element path
+                        element_path = self._get_element_xpath(driver, checkbox)
+                        
                         is_visible = checkbox.is_displayed()
                         is_enabled = checkbox.is_enabled()
                         
@@ -194,6 +284,8 @@ class UITester:
                             'type': 'checkbox',
                             'element': element_html,
                             'elementType': 'input',
+                            'elementPath': element_path,
+                            'action': 'check',
                             'attributes': {
                                 'type': 'checkbox', 
                                 'value': value,
@@ -207,6 +299,8 @@ class UITester:
                             'type': 'checkbox',
                             'element': str(checkbox),
                             'elementType': 'input',
+                            'elementPath': 'Unknown',
+                            'action': 'check',
                             'attributes': {'type': 'checkbox'},
                             'status': 'failed',
                             'error': str(e)
@@ -219,6 +313,9 @@ class UITester:
                         label_element = self._find_associated_label(driver, radio)
                         label_text = label_element.text if label_element else ''
                         
+                        # Get element path
+                        element_path = self._get_element_xpath(driver, radio)
+                        
                         is_visible = radio.is_displayed()
                         is_enabled = radio.is_enabled()
                         
@@ -226,8 +323,10 @@ class UITester:
                             'type': 'radio',
                             'element': element_html,
                             'elementType': 'input',
+                            'elementPath': element_path,
+                            'action': 'select',
                             'attributes': {
-                                'type': 'radio',
+                                'type': 'radio', 
                                 'value': value,
                                 'label': label_text
                             },
@@ -239,46 +338,39 @@ class UITester:
                             'type': 'radio',
                             'element': str(radio),
                             'elementType': 'input',
+                            'elementPath': 'Unknown',
+                            'action': 'select',
                             'attributes': {'type': 'radio'},
                             'status': 'failed',
                             'error': str(e)
                         })
                 
-                # Just store the form ID and action, not the full HTML
-                form_id = form.get_attribute('id') or ''
-                form_action = form.get_attribute('action') or ''
+                # Get form details
+                form_id = form.get_attribute('id') or 'unknown'
+                form_action = form.get_attribute('action') or 'unknown'
+                
+                # Get element path
+                element_path = self._get_element_xpath(driver, form)
+                
                 self.test_results.append({
                     'type': 'form',
                     'element': f"Form ID: {form_id}, Action: {form_action}",
                     'elementType': 'form',
+                    'elementPath': element_path,
+                    'action': 'submit',
                     'status': 'passed'
                 })
             except Exception as e:
                 self.test_results.append({
                     'type': 'form',
                     'element': str(form),
+                    'elementType': 'form',
+                    'elementPath': 'Unknown',
+                    'action': 'submit',
                     'status': 'failed',
                     'error': str(e)
                 })
                 
-    def _find_associated_label(self, driver, element):
-        """Find label associated with an input element"""
-        try:
-            # Try to find label by input's id
-            element_id = element.get_attribute('id')
-            if element_id:
-                label = driver.find_element(By.CSS_SELECTOR, f"label[for='{element_id}']")
-                if label:
-                    return label
-                    
-            # Try to find parent label (where input is inside label)
-            parent = element.find_element(By.XPATH, "./ancestor::label")
-            if parent:
-                return parent
-        except:
-            pass
-        return None
-
     def _test_buttons(self, driver):
         buttons = driver.find_elements(By.TAG_NAME, 'button')
         button_inputs = driver.find_elements(By.XPATH, '//input[@type="button"]')
@@ -291,6 +383,9 @@ class UITester:
                 # Get element details for better visualization
                 element_html = button.get_attribute('outerHTML')
                 element_type = button.tag_name
+                
+                # Get element path
+                element_path = self._get_element_xpath(driver, button)
                 
                 # Check if button contains SVG
                 has_svg = False
@@ -313,11 +408,20 @@ class UITester:
                 # Test button click - use JavaScript to avoid actual navigation
                 driver.execute_script("arguments[0].scrollIntoView(true);", button)
                 
+                # Determine action type based on button attributes
+                action = 'click'
+                if element_type == 'input' and button.get_attribute('type') == 'submit':
+                    action = 'submit'
+                elif element_type == 'input' and button.get_attribute('type') == 'reset':
+                    action = 'reset'
+                
                 # Store button information
                 self.test_results.append({
                     'type': 'button',
                     'element': element_html,
                     'elementType': element_type,
+                    'elementPath': element_path,
+                    'action': action,
                     'innerHtml': inner_html,
                     'hasSvg': has_svg,
                     'status': 'passed'
@@ -326,6 +430,9 @@ class UITester:
                 self.test_results.append({
                     'type': 'button',
                     'element': str(button),
+                    'elementType': 'button',
+                    'elementPath': 'Unknown',
+                    'action': 'click',
                     'status': 'failed',
                     'error': str(e)
                 })
@@ -337,6 +444,9 @@ class UITester:
                 src = img.get_attribute('src')
                 alt = img.get_attribute('alt') or ''
                 element_html = img.get_attribute('outerHTML')
+                
+                # Get element path
+                element_path = self._get_element_xpath(driver, img)
                 
                 # Get the base URL for relative image paths
                 base_url = self.url
@@ -353,6 +463,8 @@ class UITester:
                     'type': 'image',
                     'element': element_html,
                     'elementType': 'img',
+                    'elementPath': element_path,
+                    'action': 'load',
                     'src': src,
                     'attributes': {'alt': alt},
                     'status': status,
@@ -363,6 +475,8 @@ class UITester:
                     'type': 'image',
                     'element': str(img),
                     'elementType': 'img',
+                    'elementPath': 'Unknown',
+                    'action': 'load',
                     'status': 'failed',
                     'error': str(e)
                 })
@@ -381,12 +495,16 @@ class UITester:
                 self.test_results.append({
                     'type': 'responsive',
                     'element': f"{size['width']}x{size['height']}",
+                    'elementPath': 'viewport',
+                    'action': 'resize',
                     'status': 'passed'
                 })
             except Exception as e:
                 self.test_results.append({
                     'type': 'responsive',
                     'element': f"{size['width']}x{size['height']}",
+                    'elementPath': 'viewport',
+                    'action': 'resize',
                     'status': 'failed',
                     'error': str(e)
                 })

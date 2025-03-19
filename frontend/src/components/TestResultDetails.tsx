@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Image as ImageIcon, Globe } from "lucide-react";
+import { Image as ImageIcon, Globe, Server } from "lucide-react";
 
 interface TestResult {
 	type: string;
@@ -26,6 +26,10 @@ interface TestResult {
 	contentType?: string;
 	responsePreview?: string;
 	hasSvg?: boolean;
+	endpoint?: string; // API endpoint URL
+	requestType?: string; // GET, POST, PUT, DELETE
+	elementPath?: string; // DOM path of the element
+	action?: string; // Action performed on the element
 }
 
 interface TestResultDetailsProps {
@@ -55,6 +59,24 @@ export function TestResultDetails({
 
 	const formatDuration = (seconds: number) => {
 		return `${seconds.toFixed(2)}s`;
+	};
+
+	// Function to get badge variant based on request type
+	const getRequestTypeBadgeVariant = (requestType?: string) => {
+		if (!requestType) return "default";
+
+		switch (requestType.toUpperCase()) {
+			case "GET":
+				return "success";
+			case "POST":
+				return "default";
+			case "PUT":
+				return "warning";
+			case "DELETE":
+				return "destructive";
+			default:
+				return "secondary";
+		}
 	};
 
 	// Function to render element preview based on element type
@@ -412,11 +434,58 @@ export function TestResultDetails({
 												</Badge>
 											</div>
 
+											{/* API Endpoint Information - Show for API tests */}
+											{result.type === "api" && (
+												<div className="mb-3 bg-muted/50 p-2 rounded-md">
+													<div className="flex items-center gap-2 mb-1 flex-wrap">
+														<Server className="h-4 w-4" />
+														<span className="text-sm font-medium">
+															API Endpoint:
+														</span>
+
+														{test.requestType && (
+															<Badge
+																variant={getRequestTypeBadgeVariant(
+																	test.requestType
+																)}
+																className="text-xs"
+															>
+																{test.requestType.toUpperCase()}
+															</Badge>
+														)}
+													</div>
+													<p className="text-sm text-muted-foreground break-all pl-6">
+														{test.endpoint ||
+															"Unknown endpoint"}
+													</p>
+												</div>
+											)}
+
 											{/* Element Information */}
 											<div className="mb-3">
 												<p className="text-sm text-muted-foreground mb-2 break-all">
 													Element: {test.element}
 												</p>
+
+												{/* Element Path Information */}
+												{test.elementPath && (
+													<p className="text-sm text-muted-foreground mb-2">
+														<span className="font-medium">
+															Path:
+														</span>{" "}
+														{test.elementPath}
+													</p>
+												)}
+
+												{/* Action Information */}
+												{test.action && (
+													<p className="text-sm text-muted-foreground mb-2">
+														<span className="font-medium">
+															Action:
+														</span>{" "}
+														{test.action}
+													</p>
+												)}
 
 												{/* Element Preview */}
 												{renderElementPreview(test)}

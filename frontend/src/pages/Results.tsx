@@ -33,6 +33,14 @@ interface TestResult {
 	duration: number;
 	config: any;
 	testResults: any[];
+	elementType?: string;
+	elementPath?: string; // DOM path of the element
+	action?: string; // Action performed on the element
+	innerHtml?: string;
+	attributes?: Record<string, string>;
+	hasSvg?: boolean;
+	endpoint?: string; // API endpoint URL
+	requestType?: string; // GET, POST, PUT, DELETE
 	[key: string]: any; // Allow for any additional properties
 }
 
@@ -151,99 +159,122 @@ export default function Results() {
 	};
 
 	const handleDownload = async (e: React.MouseEvent, result: TestResult) => {
-		e.stopPropagation();
+		e.stopPropagation(); // Stop propagation to prevent row click
 
 		try {
-			// Create a new workbook
+			// Create workbook and worksheet
 			const wb = XLSX.utils.book_new();
 
-			// Create main test info worksheet
-			const mainData = [
-				["Test Information"],
-				["URL", result.url || "N/A"],
-				["Type", result.type || "N/A"],
-				["Status", result.status || "N/A"],
-				[
-					"Date",
-					result.date
-						? new Date(result.date).toLocaleString()
-						: "N/A",
-				],
-				[
-					"Pass Rate",
-					result.passRate !== undefined
-						? `${result.passRate.toFixed(1)}%`
-						: "N/A",
-				],
-				[
-					"Tests Run",
-					result.testsRun !== undefined ? result.testsRun : "N/A",
-				],
-				[
-					"Duration",
-					result.duration !== undefined
-						? `${(result.duration / 1000).toFixed(2)} seconds`
-						: "N/A",
-				],
-				[],
-				["Configuration"],
+			// Create test summary sheet
+			const summaryData = [
+				["Test URL", result.url],
+				["Test Type", result.type],
+				["Status", result.status],
+				["Date", new Date(result.date).toLocaleString()],
+				["Duration", `${result.duration.toFixed(2)}s`],
+				["Tests Run", result.testsRun],
+				["Pass Rate", `${result.passRate.toFixed(1)}%`],
+				["", ""], // Empty row for spacing
+				["Test Configuration", ""],
 			];
 
-			// Add configuration info
-			if (result.config && typeof result.config === "object") {
+			// Add config details
+			if (result.config) {
 				Object.entries(result.config).forEach(([key, value]) => {
-					mainData.push([key, String(value)]);
+					if (typeof value === "boolean") {
+						summaryData.push([key, value ? "Yes" : "No"]);
+					} else {
+						summaryData.push([key, value as string]);
+					}
 				});
 			}
 
-			// Add test results header
-			mainData.push([]);
-			mainData.push(["Test Results"]);
-			mainData.push(["Component", "Status", "Details"]);
+			const summaryWS = XLSX.utils.aoa_to_sheet(summaryData);
+			XLSX.utils.book_append_sheet(wb, summaryWS, "Test Summary");
 
-			// Add test results rows
-			if (result.testResults && Array.isArray(result.testResults)) {
-				result.testResults.forEach((test) => {
-					// Find the component name using various possible properties
-					const component =
-						test.component ||
-						test.element ||
-						test.endpoint ||
-						"Unknown";
-					// Determine status
-					const status =
-						test.status === "passed" || test.passed
-							? "Passed"
-							: "Failed";
-					// Get error details or empty string
-					const details = test.error || "";
-					mainData.push([component, status, details]);
+			// Create detailed results sheet
+			const detailsHeaders = ["Element", "Action", "Result"];
+			const detailsData = [detailsHeaders];
+
+			if (result.testResults && result.testResults.length > 0) {
+				result.testResults.forEach((testResult) => {
+					// Create meaningful element representation
+					let elementInfo = "";
+					if (testResult.elementType) {
+						// For UI elements
+						elementInfo = `${testResult.elementType} [${
+							testResult.elementPath || "Unknown path"
+						}]`;
+
+						// For buttons, include text content
+						if (
+							testResult.elementType === "button" ||
+							testResult.elementType === "input"
+						) {
+							if (testResult.innerHtml) {
+								elementInfo += ` "${testResult.innerHtml}"`;
+							}
+						}
+
+						// For inputs, include type info
+						if (
+							testResult.elementType === "input" &&
+							testResult.attributes?.type
+						) {
+							elementInfo += ` type=${testResult.attributes.type}`;
+						}
+
+						// For images, include alt text
+						if (
+							testResult.elementType === "img" &&
+							testResult.attributes?.alt
+						) {
+							elementInfo += ` alt="${testResult.attributes.alt}"`;
+						}
+					} else if (testResult.endpoint) {
+						// For API tests
+						elementInfo = `API [${testResult.endpoint}]`;
+					} else {
+						// Fallback for other elements
+						elementInfo = testResult.element || "Unknown element";
+					}
+
+					// Get action type
+					const action = testResult.action || "unknown";
+
+					// Add to data array
+					detailsData.push([
+						elementInfo,
+						action,
+						testResult.status || "unknown",
+					]);
 				});
 			}
 
-			// Create worksheet and add to workbook
-			const ws = XLSX.utils.aoa_to_sheet(mainData);
+			const detailsWS = XLSX.utils.aoa_to_sheet(detailsData);
 
-			// Auto-size columns
-			const cols = [{ wch: 30 }, { wch: 15 }, { wch: 40 }];
-			ws["!cols"] = cols;
+			// Set column widths
+			const colWidths = [{ wch: 60 }, { wch: 15 }, { wch: 15 }];
+			detailsWS["!cols"] = colWidths;
 
-			XLSX.utils.book_append_sheet(wb, ws, "Test Results");
+			XLSX.utils.book_append_sheet(wb, detailsWS, "Test Details");
 
-			// Generate filename
-			const sanitizedUrl = result.url
-				.replace(/https?:\/\//, "")
-				.replace(/[^a-zA-Z0-9]/g, "_")
+			// Create a safe filename based on the URL
+			const safeUrl = result.url
+				.replace(/[^a-z0-9]/gi, "_")
 				.substring(0, 30);
-			const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-			const filename = `test_result_${sanitizedUrl}_${timestamp}.xlsx`;
+			const timestamp = new Date()
+				.toISOString()
+				.replace(/:/g, "-")
+				.substring(0, 19);
+			const filename = `test_result_${safeUrl}_${timestamp}.xlsx`;
 
-			// Save the file
+			// Write to file and download
 			XLSX.writeFile(wb, filename);
-			toast.success("Test result exported to Excel");
+			toast.success("Test results downloaded successfully");
 		} catch (error) {
 			console.error("Error exporting to Excel:", error);
-			toast.error("Failed to export test result");
+			toast.error("Failed to download test results");
 		}
 	};
 
