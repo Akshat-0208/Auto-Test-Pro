@@ -11,12 +11,20 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { TestResultDetails } from "@/components/TestResultDetails";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Trash2, RefreshCw } from "lucide-react";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import * as XLSX from "xlsx";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface TestResult {
 	_id?: string;
@@ -100,77 +108,56 @@ export default function Results() {
 		fetchResults();
 	}, []);
 
-	// Add polling for result updates - especially useful for tests that are running
+	// Check for test ID in URL parameter
 	useEffect(() => {
 		// Check URL parameters to see if we're waiting for a specific test
 		const params = new URLSearchParams(window.location.search);
 		const testIdToWatch = params.get("id");
 
-		// If we have a specific test ID to watch, poll more frequently
-		const pollInterval = testIdToWatch ? 2000 : 10000; // 2 seconds if watching a test, 10 seconds otherwise
-
-		// Set up polling
-		const intervalId = setInterval(() => {
-			// Only fetch if we need updates
-			if (testIdToWatch || results.some((r) => r.status === "running")) {
-				fetchResults().then(() => {
-					// If we have a test ID to watch, check if it's completed
-					if (testIdToWatch) {
-						const watchedTest = results.find(
-							(r) => r.testId === testIdToWatch
-						);
-						if (watchedTest) {
-							// If test is already completed or failed, show it
-							if (
-								watchedTest.status === "completed" ||
-								watchedTest.status === "failed"
-							) {
-								// Test is done, no need to keep polling frequently
-								clearInterval(intervalId);
-
-								// Show toast notification
-								toast.success(
-									`Test ${
-										watchedTest.name ||
-										"ID: " + watchedTest.testId
-									} is ${watchedTest.status}`
-								);
-
-								// Highlight the test result
-								setSelectedResult(watchedTest);
-								setShowDetails(true);
-
-								// Clean URL parameter
-								if (window.history.replaceState) {
-									const newUrl = window.location.pathname;
-									window.history.replaceState(
-										{ path: newUrl },
-										"",
-										newUrl
-									);
-								}
-							}
-						}
-					}
-				});
-			}
-		}, pollInterval);
-
-		// Initial check for a test ID in the URL - show it immediately if complete
+		// Only run this effect when results are loaded and we have a test ID
 		if (testIdToWatch && results.length > 0) {
-			const initialTest = results.find((r) => r.testId === testIdToWatch);
-			if (
-				initialTest &&
-				(initialTest.status === "completed" ||
-					initialTest.status === "failed")
-			) {
-				setSelectedResult(initialTest);
-				setShowDetails(true);
+			const watchedTest = results.find((r) => r.testId === testIdToWatch);
+
+			if (watchedTest) {
+				// If test is already completed or failed, show it
+				if (
+					watchedTest.status === "completed" ||
+					watchedTest.status === "failed"
+				) {
+					// Show toast notification
+					toast.success(
+						`Test ${
+							watchedTest.name || "ID: " + watchedTest.testId
+						} is ${watchedTest.status}`
+					);
+
+					// Highlight the test result
+					setSelectedResult(watchedTest);
+					setShowDetails(true);
+
+					// Clean URL parameter
+					if (window.history.replaceState) {
+						const newUrl = window.location.pathname;
+						window.history.replaceState(
+							{ path: newUrl },
+							"",
+							newUrl
+						);
+					}
+				} else if (watchedTest.status === "running") {
+					// If test is still running, show info message
+					toast.info(
+						`Test ${
+							watchedTest.name || "ID: " + watchedTest.testId
+						} is still running. Refresh the page to check for updates.`
+					);
+
+					// Highlight the test result
+					setSelectedResult(watchedTest);
+					setShowDetails(true);
+				}
 			}
 		}
-
-		// Clean up interval when component unmounts
-		return () => clearInterval(intervalId);
 	}, [results]);
 
 	// Add effect to clear selected result when dialog closes
@@ -550,21 +537,54 @@ export default function Results() {
 				) : (
 					<>
 						<div className="mb-4 flex flex-col md:flex-row gap-4">
-							<Tabs
-								defaultValue="all"
-								className="w-full md:w-auto"
-								onValueChange={setFilter}
-							>
-								<TabsList className="grid w-full grid-cols-3">
-									<TabsTrigger value="all">All</TabsTrigger>
-									<TabsTrigger value="ui">
-										UI Tests
-									</TabsTrigger>
-									<TabsTrigger value="api">
-										API Tests
-									</TabsTrigger>
-								</TabsList>
-							</Tabs>
+							<div className="flex items-center space-x-2">
+								<Badge
+									variant={
+										filter === "all" ? "default" : "outline"
+									}
+									className="cursor-pointer hover:bg-muted"
+									onClick={() => setFilter("all")}
+								>
+									All
+								</Badge>
+								<Badge
+									variant={
+										filter === "api" ? "default" : "outline"
+									}
+									className="cursor-pointer hover:bg-muted"
+									onClick={() => setFilter("api")}
+								>
+									API
+								</Badge>
+								<Badge
+									variant={
+										filter === "ui" ? "default" : "outline"
+									}
+									className="cursor-pointer hover:bg-muted"
+									onClick={() => setFilter("ui")}
+								>
+									UI
+								</Badge>
+								<Badge
+									variant={
+										filter === "e2e" ? "default" : "outline"
+									}
+									className="cursor-pointer hover:bg-muted"
+									onClick={() => setFilter("e2e")}
+								>
+									E2E
+								</Badge>
+
+								{/* Add refresh button */}
+								<Button
+									variant="outline"
+									size="icon"
+									onClick={fetchResults}
+									title="Refresh results"
+								>
+									<RefreshCw className="h-4 w-4" />
+								</Button>
+							</div>
 							<Input
 								placeholder="Search by URL..."
 								className="w-full md:w-64"

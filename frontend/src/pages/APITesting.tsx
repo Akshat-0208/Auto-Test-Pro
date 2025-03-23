@@ -521,90 +521,10 @@ const APITesting = () => {
 			const { testId } = response.data;
 
 			toast.success(
-				`Started unified test with ${endpointData.length} endpoints. Waiting for results...`
+				`Started test for ${endpointData.length} endpoints. Redirecting to results page...`
 			);
 
-			// Poll for test completion
-			let testCompleted = false;
-			let attempts = 0;
-			const maxAttempts = 60; // Increase to 60 attempts (1 minute)
-
-			while (!testCompleted && attempts < maxAttempts) {
-				attempts++;
-				await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second
-
-				try {
-					// Fetch results to check test status
-					const resultsResponse = await axios.get(
-						"http://localhost:5000/api/results"
-					);
-					const results = resultsResponse.data;
-
-					// Find our test
-					const testResult = results.find(
-						(r: any) => r.testId === testId
-					);
-
-					if (testResult) {
-						// Check if test is completed
-						if (
-							testResult.status === "completed" ||
-							testResult.status === "failed"
-						) {
-							testCompleted = true;
-							toast.success(
-								`Test completed with status: ${testResult.status}`
-							);
-						} else {
-							// Log progress every 5 seconds
-							if (attempts % 5 === 0) {
-								toast.info(
-									`Test is still running (attempt ${attempts}/${maxAttempts})...`
-								);
-								console.log(
-									`Test ${testId} status: ${testResult.status}`
-								);
-							}
-						}
-					}
-				} catch (error) {
-					console.error("Error checking test status:", error);
-				}
-			}
-
-			// Add a final check before giving up
-			if (!testCompleted) {
-				try {
-					await new Promise((resolve) => setTimeout(resolve, 3000)); // Wait 3 more seconds
-
-					const finalCheckResponse = await axios.get(
-						"http://localhost:5000/api/results"
-					);
-					const finalResults = finalCheckResponse.data;
-					const finalTestResult = finalResults.find(
-						(r: any) => r.testId === testId
-					);
-
-					if (
-						finalTestResult &&
-						(finalTestResult.status === "completed" ||
-							finalTestResult.status === "failed")
-					) {
-						testCompleted = true;
-						toast.success(
-							`Test completed with status: ${finalTestResult.status}`
-						);
-					} else {
-						toast.info(
-							"Test may still be running. Proceeding to results page..."
-						);
-					}
-				} catch (error) {
-					console.error("Error in final status check:", error);
-				}
-			}
-
-			// Navigate to Results page
+			// Navigate to Results page immediately without polling
 			window.location.href = `/results?id=${testId}`;
 		} catch (error: any) {
 			console.error("Batch test error:", error);

@@ -84,6 +84,26 @@ export function TestResultDetails({
 	// Check if this is a batch test result
 	const isBatchTest = result.type === "api-batch";
 
+	// Function to get border color based on request type
+	const getBorderColorForMethod = (requestType?: string) => {
+		if (!requestType) return "border-l-gray-300";
+
+		switch (requestType.toUpperCase()) {
+			case "GET":
+				return "border-l-green-500 border-l-4";
+			case "POST":
+				return "border-l-blue-500 border-l-4";
+			case "PUT":
+				return "border-l-amber-500 border-l-4";
+			case "PATCH":
+				return "border-l-purple-500 border-l-4";
+			case "DELETE":
+				return "border-l-red-500 border-l-4";
+			default:
+				return "border-l-gray-300";
+		}
+	};
+
 	// Function to get badge variant based on request type
 	const getRequestTypeBadgeVariant = (requestType?: string) => {
 		if (!requestType) return "default";
@@ -500,7 +520,18 @@ export function TestResultDetails({
 												) => (
 													<div
 														key={index}
-														className="border rounded-lg p-3 md:p-4 w-full"
+														className={`border rounded-lg p-3 md:p-4 w-full ${
+															endpoint.method
+																? getBorderColorForMethod(
+																		endpoint.method
+																  )
+																: ""
+														}`}
+														title={
+															endpoint.method
+																? `${endpoint.method.toUpperCase()} Request`
+																: "API Request"
+														}
 													>
 														<div className="flex justify-between gap-2 mb-3">
 															<h4 className="font-medium">
@@ -512,20 +543,31 @@ export function TestResultDetails({
 																			)}
 																			className="mr-2 text-xs"
 																		>
-																			{
-																				endpoint.method
-																			}
+																			{endpoint.method?.toUpperCase() ||
+																				"GET"}
 																		</Badge>
 																		{
 																			endpoint.url
 																		}
 																	</>
 																) : (
-																	endpoint.name ||
-																	`Endpoint ${
-																		index +
-																		1
-																	}`
+																	<>
+																		{endpoint.method && (
+																			<Badge
+																				variant={getRequestTypeBadgeVariant(
+																					endpoint.method
+																				)}
+																				className="mr-2 text-xs"
+																			>
+																				{endpoint.method.toUpperCase()}
+																			</Badge>
+																		)}
+																		{endpoint.name ||
+																			`Endpoint ${
+																				index +
+																				1
+																			}`}
+																	</>
 																)}
 															</h4>
 															<Badge
@@ -623,7 +665,22 @@ export function TestResultDetails({
 													]) => (
 														<div
 															key={endpointName}
-															className="border-2 rounded-lg p-4"
+															className={`border-2 rounded-lg p-4 ${
+																result.type ===
+																"api"
+																	? getBorderColorForMethod(
+																			tests[0]
+																				.method
+																	  )
+																	: ""
+															}`}
+															title={
+																result.type ===
+																	"api" &&
+																tests[0]?.method
+																	? `${tests[0].method.toUpperCase()} Request`
+																	: "API Test"
+															}
 														>
 															<h4 className="font-medium text-lg mb-3">
 																{endpointName}
@@ -643,7 +700,7 @@ export function TestResultDetails({
 																</div>
 															)}
 
-															{/* Show method badge */}
+															{/* Make method badge more prominent */}
 															{tests[0]
 																?.method && (
 																<div className="mb-3">
@@ -652,6 +709,7 @@ export function TestResultDetails({
 																			tests[0]
 																				.method
 																		)}
+																		className="text-base px-3 py-1"
 																	>
 																		{tests[0].method.toUpperCase()}
 																	</Badge>
@@ -669,10 +727,34 @@ export function TestResultDetails({
 																			key={
 																				index
 																			}
-																			className="border rounded-lg p-3 md:p-4 w-full"
+																			className={`border rounded-lg p-3 md:p-4 w-full ${getBorderColorForMethod(
+																				test.requestType ||
+																					tests[0]
+																						?.method
+																			)}`}
+																			title={`${(
+																				test.requestType ||
+																				tests[0]
+																					?.method ||
+																				"GET"
+																			).toUpperCase()} Request`}
 																		>
 																			<div className="flex justify-between gap-2 mb-3">
 																				<h5 className="font-medium capitalize">
+																					{/* Add request type badge if needed for each test */}
+																					{test.requestType &&
+																						test.requestType !==
+																							tests[0]
+																								?.method && (
+																							<Badge
+																								variant={getRequestTypeBadgeVariant(
+																									test.requestType
+																								)}
+																								className="mr-2 text-xs"
+																							>
+																								{test.requestType.toUpperCase()}
+																							</Badge>
+																						)}
 																					{
 																						test.type
 																					}
@@ -774,10 +856,46 @@ export function TestResultDetails({
 												(test, index) => (
 													<div
 														key={index}
-														className="border rounded-lg p-3 md:p-4 w-full"
+														className={`border rounded-lg p-3 md:p-4 w-full ${
+															result.type ===
+															"api"
+																? getBorderColorForMethod(
+																		test.requestType ||
+																			test.method
+																  )
+																: ""
+														}`}
+														title={
+															result.type ===
+															"api"
+																? `${(
+																		test.requestType ||
+																		test.method ||
+																		"GET"
+																  ).toUpperCase()} Request`
+																: "Test Result"
+														}
 													>
 														<div className="flex justify-between gap-2 mb-3">
 															<h4 className="font-medium capitalize">
+																{/* Add request type badge for API tests */}
+																{result.type ===
+																	"api" && (
+																	<Badge
+																		variant={getRequestTypeBadgeVariant(
+																			test.requestType ||
+																				test.method ||
+																				"GET"
+																		)}
+																		className="mr-2"
+																	>
+																		{(
+																			test.requestType ||
+																			test.method ||
+																			"GET"
+																		).toUpperCase()}
+																	</Badge>
+																)}
 																{test.type}
 															</h4>
 															<Badge
@@ -803,26 +921,6 @@ export function TestResultDetails({
 																		API
 																		Endpoint:
 																	</span>
-
-																	{test.requestType ? (
-																		<Badge
-																			variant={getRequestTypeBadgeVariant(
-																				test.requestType
-																			)}
-																			className="text-xs"
-																		>
-																			{test.requestType.toUpperCase()}
-																		</Badge>
-																	) : test.method ? (
-																		<Badge
-																			variant={getRequestTypeBadgeVariant(
-																				test.method
-																			)}
-																			className="text-xs"
-																		>
-																			{test.method.toUpperCase()}
-																		</Badge>
-																	) : null}
 																</div>
 
 																{/* Show endpoint name if available (for unified tests) */}
