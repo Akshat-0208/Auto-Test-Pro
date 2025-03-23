@@ -66,7 +66,7 @@ export default function Results() {
 				"http://localhost:5000/api/results"
 			);
 
-			// Map the results to ensure each has a consistent ID property
+			// Map the results to ensure each has a consistent ID property and default values for required fields
 			const processedResults = response.data.map((result: any) => {
 				// Try to find an ID property - MongoDB might return _id
 				let id = null;
@@ -74,17 +74,17 @@ export default function Results() {
 				else if (result.id) id = result.id;
 				else if (result.testId) id = result.testId;
 
-				// If we found an ID, make sure it's available as both _id and id
-				if (id) {
-					return {
-						...result,
-						_id: id, // Ensure _id exists
-						id: id, // Ensure id exists
-					};
-				}
-
-				// If no ID found, just return the original object
-				return result;
+				// Ensure all required fields have default values
+				return {
+					...result,
+					_id: id, // Ensure _id exists
+					id: id, // Ensure id exists
+					passRate: result.passRate ?? 0,
+					testsRun: result.testsRun ?? 0,
+					duration: result.duration ?? 0,
+					status: result.status || "unknown",
+					testResults: result.testResults || [],
+				};
 			});
 
 			setResults(processedResults);
@@ -100,6 +100,79 @@ export default function Results() {
 		fetchResults();
 	}, []);
 
+	// Add polling for result updates - especially useful for tests that are running
+	useEffect(() => {
+		// Check URL parameters to see if we're waiting for a specific test
+		const params = new URLSearchParams(window.location.search);
+		const testIdToWatch = params.get("id");
+
+		// If we have a specific test ID to watch, poll more frequently
+		const pollInterval = testIdToWatch ? 2000 : 10000; // 2 seconds if watching a test, 10 seconds otherwise
+
+		// Set up polling
+		const intervalId = setInterval(() => {
+			// Only fetch if we need updates
+			if (testIdToWatch || results.some((r) => r.status === "running")) {
+				fetchResults().then(() => {
+					// If we have a test ID to watch, check if it's completed
+					if (testIdToWatch) {
+						const watchedTest = results.find(
+							(r) => r.testId === testIdToWatch
+						);
+						if (watchedTest) {
+							// If test is already completed or failed, show it
+							if (
+								watchedTest.status === "completed" ||
+								watchedTest.status === "failed"
+							) {
+								// Test is done, no need to keep polling frequently
+								clearInterval(intervalId);
+
+								// Show toast notification
+								toast.success(
+									`Test ${
+										watchedTest.name ||
+										"ID: " + watchedTest.testId
+									} is ${watchedTest.status}`
+								);
+
+								// Highlight the test result
+								setSelectedResult(watchedTest);
+								setShowDetails(true);
+
+								// Clean URL parameter
+								if (window.history.replaceState) {
+									const newUrl = window.location.pathname;
+									window.history.replaceState(
+										{ path: newUrl },
+										"",
+										newUrl
+									);
+								}
+							}
+						}
+					}
+				});
+			}
+		}, pollInterval);
+
+		// Initial check for a test ID in the URL - show it immediately if complete
+		if (testIdToWatch && results.length > 0) {
+			const initialTest = results.find((r) => r.testId === testIdToWatch);
+			if (
+				initialTest &&
+				(initialTest.status === "completed" ||
+					initialTest.status === "failed")
+			) {
+				setSelectedResult(initialTest);
+				setShowDetails(true);
+			}
+		}
+
+		// Clean up interval when component unmounts
+		return () => clearInterval(intervalId);
+	}, [results]);
+
 	// Add effect to clear selected result when dialog closes
 	useEffect(() => {
 		if (!showDetails) {
@@ -108,15 +181,47 @@ export default function Results() {
 	}, [showDetails]);
 
 	const filteredResults = results.filter((result) => {
-		const matchesFilter = filter === "all" || result.type === filter;
+		// Filter by type
+		const matchesFilter =
+			filter === "all" ||
+			result.type === filter ||
+			(filter === "api" && result.type === "api-batch") || // Show batch tests under API
+			(filter === "api" &&
+				result.type === "api" &&
+				result.name === "Unified API Test"); // Show unified tests under API
+
+		// Filter by search term
 		const matchesSearch = result.url
-			.toLowerCase()
-			.includes(searchQuery.toLowerCase());
+			? result.url.toLowerCase().includes(searchQuery.toLowerCase())
+			: result.name // For batch tests or unified tests, check name if available
+			? result.name.toLowerCase().includes(searchQuery.toLowerCase())
+			: false;
+
 		return matchesFilter && matchesSearch;
 	});
 
-	const totalPages = Math.ceil(filteredResults.length / resultsPerPage);
-	const paginatedResults = filteredResults.slice(
+	// Sort: Show most recent first, prioritize unified and batch tests
+	const sortedResults = [...filteredResults].sort((a, b) => {
+		// First sort by type - unified and batch tests come first
+		if (
+			(a.name === "Unified API Test" || a.type === "api-batch") &&
+			b.name !== "Unified API Test" &&
+			b.type !== "api-batch"
+		)
+			return -1;
+		if (
+			a.name !== "Unified API Test" &&
+			a.type !== "api-batch" &&
+			(b.name === "Unified API Test" || b.type === "api-batch")
+		)
+			return 1;
+
+		// Then sort by date (most recent first)
+		return new Date(b.date).getTime() - new Date(a.date).getTime();
+	});
+
+	const totalPages = Math.ceil(sortedResults.length / resultsPerPage);
+	const paginatedResults = sortedResults.slice(
 		(currentPage - 1) * resultsPerPage,
 		currentPage * resultsPerPage
 	);
@@ -192,72 +297,215 @@ export default function Results() {
 			const summaryWS = XLSX.utils.aoa_to_sheet(summaryData);
 			XLSX.utils.book_append_sheet(wb, summaryWS, "Test Summary");
 
-			// Create detailed results sheet
-			const detailsHeaders = ["Element", "Action", "Result"];
-			const detailsData = [detailsHeaders];
+			// Create detailed results sheet with different formats based on test type
+			if (result.type === "api") {
+				// API Test format - Organize by request method
+				const apiHeaders = [
+					"Endpoint",
+					"Method",
+					"Test Type",
+					"Status",
+					"Response Time",
+					"Details",
+				];
 
-			if (result.testResults && result.testResults.length > 0) {
-				result.testResults.forEach((testResult) => {
-					// Create meaningful element representation
-					let elementInfo = "";
-					if (testResult.elementType) {
-						// For UI elements
-						elementInfo = `${testResult.elementType} [${
-							testResult.elementPath || "Unknown path"
-						}]`;
+				// Group test results by method
+				const methodGroups: Record<string, any[]> = {};
 
-						// For buttons, include text content
-						if (
-							testResult.elementType === "button" ||
-							testResult.elementType === "input"
-						) {
-							if (testResult.innerHtml) {
-								elementInfo += ` "${testResult.innerHtml}"`;
+				if (result.testResults && result.testResults.length > 0) {
+					// First pass: group by method
+					result.testResults.forEach((testResult) => {
+						const method =
+							testResult.requestType ||
+							testResult.method ||
+							"GET";
+						if (!methodGroups[method]) {
+							methodGroups[method] = [];
+						}
+						methodGroups[method].push(testResult);
+					});
+				}
+
+				// Create sheets for each request method type
+				const methodOrder = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+				// Create a consolidated "All Tests" sheet
+				const allTestsData = [apiHeaders];
+				if (result.testResults && result.testResults.length > 0) {
+					result.testResults.forEach((testResult) => {
+						// Extract relevant API test information
+						const endpoint =
+							testResult.endpoint ||
+							result.endpoint ||
+							"Unknown endpoint";
+						const method =
+							testResult.requestType ||
+							testResult.method ||
+							"GET";
+
+						// Determine test type
+						let testType = testResult.testType || "General";
+
+						// Format response time if available
+						const responseTime = testResult.responseTime
+							? `${testResult.responseTime.toFixed(2)}ms`
+							: "N/A";
+
+						// Details field combines any available information
+						let details = testResult.description || "";
+						if (testResult.error) {
+							details += ` Error: ${testResult.error}`;
+						}
+						if (testResult.details) {
+							details += ` ${testResult.details}`;
+						}
+
+						// Add to data array
+						allTestsData.push([
+							endpoint,
+							method,
+							testType,
+							testResult.status || "unknown",
+							responseTime,
+							details,
+						]);
+					});
+				}
+
+				// Add the consolidated sheet
+				const allTestsWS = XLSX.utils.aoa_to_sheet(allTestsData);
+
+				// Set column widths
+				const apiColWidths = [
+					{ wch: 40 }, // Endpoint
+					{ wch: 10 }, // Method
+					{ wch: 20 }, // Test Type
+					{ wch: 15 }, // Status
+					{ wch: 15 }, // Response Time
+					{ wch: 50 }, // Details
+				];
+				allTestsWS["!cols"] = apiColWidths;
+
+				XLSX.utils.book_append_sheet(wb, allTestsWS, "All API Tests");
+
+				// Create method-specific sheets for methods that have tests
+				methodOrder.forEach((method) => {
+					if (
+						methodGroups[method] &&
+						methodGroups[method].length > 0
+					) {
+						const methodData = [apiHeaders];
+
+						methodGroups[method].forEach((testResult) => {
+							const endpoint =
+								testResult.endpoint ||
+								result.endpoint ||
+								"Unknown endpoint";
+
+							// Determine test type
+							let testType = testResult.testType || "General";
+
+							// Format response time if available
+							const responseTime = testResult.responseTime
+								? `${testResult.responseTime.toFixed(2)}ms`
+								: "N/A";
+
+							// Details field
+							let details = testResult.description || "";
+							if (testResult.error) {
+								details += ` Error: ${testResult.error}`;
 							}
-						}
+							if (testResult.details) {
+								details += ` ${testResult.details}`;
+							}
 
-						// For inputs, include type info
-						if (
-							testResult.elementType === "input" &&
-							testResult.attributes?.type
-						) {
-							elementInfo += ` type=${testResult.attributes.type}`;
-						}
+							// Add to method specific data
+							methodData.push([
+								endpoint,
+								method,
+								testType,
+								testResult.status || "unknown",
+								responseTime,
+								details,
+							]);
+						});
 
-						// For images, include alt text
-						if (
-							testResult.elementType === "img" &&
-							testResult.attributes?.alt
-						) {
-							elementInfo += ` alt="${testResult.attributes.alt}"`;
-						}
-					} else if (testResult.endpoint) {
-						// For API tests
-						elementInfo = `API [${testResult.endpoint}]`;
-					} else {
-						// Fallback for other elements
-						elementInfo = testResult.element || "Unknown element";
+						// Create worksheet for this method
+						const methodWS = XLSX.utils.aoa_to_sheet(methodData);
+						methodWS["!cols"] = apiColWidths;
+
+						XLSX.utils.book_append_sheet(
+							wb,
+							methodWS,
+							`${method} Tests`
+						);
 					}
-
-					// Get action type
-					const action = testResult.action || "unknown";
-
-					// Add to data array
-					detailsData.push([
-						elementInfo,
-						action,
-						testResult.status || "unknown",
-					]);
 				});
+			} else {
+				// UI Test format
+				const uiHeaders = ["Element", "Action", "Result"];
+				const uiData = [uiHeaders];
+
+				if (result.testResults && result.testResults.length > 0) {
+					result.testResults.forEach((testResult) => {
+						// Create meaningful element representation
+						let elementInfo = "";
+						if (testResult.elementType) {
+							elementInfo = `${testResult.elementType} [${
+								testResult.elementPath || "Unknown path"
+							}]`;
+
+							// For buttons, include text content
+							if (
+								testResult.elementType === "button" ||
+								testResult.elementType === "input"
+							) {
+								if (testResult.innerHtml) {
+									elementInfo += ` "${testResult.innerHtml}"`;
+								}
+							}
+
+							// For inputs, include type info
+							if (
+								testResult.elementType === "input" &&
+								testResult.attributes?.type
+							) {
+								elementInfo += ` type=${testResult.attributes.type}`;
+							}
+
+							// For images, include alt text
+							if (
+								testResult.elementType === "img" &&
+								testResult.attributes?.alt
+							) {
+								elementInfo += ` alt="${testResult.attributes.alt}"`;
+							}
+						} else {
+							// Fallback for other elements
+							elementInfo =
+								testResult.element || "Unknown element";
+						}
+
+						// Get action type
+						const action = testResult.action || "unknown";
+
+						// Add to data array
+						uiData.push([
+							elementInfo,
+							action,
+							testResult.status || "unknown",
+						]);
+					});
+				}
+
+				const uiWS = XLSX.utils.aoa_to_sheet(uiData);
+
+				// Set column widths for UI sheet
+				const uiColWidths = [{ wch: 60 }, { wch: 15 }, { wch: 15 }];
+				uiWS["!cols"] = uiColWidths;
+
+				XLSX.utils.book_append_sheet(wb, uiWS, "UI Test Details");
 			}
-
-			const detailsWS = XLSX.utils.aoa_to_sheet(detailsData);
-
-			// Set column widths
-			const colWidths = [{ wch: 60 }, { wch: 15 }, { wch: 15 }];
-			detailsWS["!cols"] = colWidths;
-
-			XLSX.utils.book_append_sheet(wb, detailsWS, "Test Details");
 
 			// Create a safe filename based on the URL
 			const safeUrl = result.url
@@ -267,7 +515,7 @@ export default function Results() {
 				.toISOString()
 				.replace(/:/g, "-")
 				.substring(0, 19);
-			const filename = `test_result_${safeUrl}_${timestamp}.xlsx`;
+			const filename = `${result.type}_test_result_${safeUrl}_${timestamp}.xlsx`;
 
 			// Write to file and download
 			XLSX.writeFile(wb, filename);
@@ -339,7 +587,7 @@ export default function Results() {
 										<thead>
 											<tr className="bg-muted">
 												<th className="p-2 text-left">
-													URL
+													URL/Name
 												</th>
 												<th className="p-2 text-left">
 													Type
@@ -351,7 +599,7 @@ export default function Results() {
 													Date
 												</th>
 												<th className="p-2 text-left">
-													Pass Rate
+													Pass Rate/Progress
 												</th>
 												<th className="p-2 text-left">
 													Actions
@@ -372,34 +620,121 @@ export default function Results() {
 													>
 														<td className="p-2">
 															<div className="relative group">
-																{result.url
-																	.length >
-																40 ? (
-																	<>
-																		<span>
-																			{result.url.substring(
-																				0,
-																				40
-																			)}
-																			<span className="text-primary">
-																				...
-																			</span>
-																		</span>
-																		<div className="absolute left-0 top-full mt-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 invisible group-hover:visible">
-																			<div className="bg-popover shadow-md rounded-md p-2 text-sm border max-w-md break-all">
+																{/* For batch tests, show name */}
+																{result.type ===
+																"api-batch" ? (
+																	<span className="flex items-center">
+																		<Badge
+																			variant="outline"
+																			className="mr-2"
+																		>
+																			Batch
+																		</Badge>
+																		{result.name ||
+																			"API Batch Test"}
+																		{/* Show count of endpoints if available */}
+																		{result.totalEndpoints && (
+																			<span className="text-xs text-muted-foreground ml-2">
+																				(
 																				{
-																					result.url
-																				}
-																			</div>
-																		</div>
-																	</>
+																					result.totalEndpoints
+																				}{" "}
+																				endpoints)
+																			</span>
+																		)}
+																	</span>
+																) : result.name ===
+																  "Unified API Test" ? (
+																	<span className="flex items-center">
+																		<Badge
+																			variant="outline"
+																			className="mr-2"
+																		>
+																			Unified
+																		</Badge>
+																		{
+																			result.name
+																		}
+																		{/* Show count of endpoints if available */}
+																		{result.totalEndpoints && (
+																			<span className="text-xs text-muted-foreground ml-2">
+																				(
+																				{
+																					result.totalEndpoints
+																				}{" "}
+																				endpoints)
+																			</span>
+																		)}
+																		{/* Show method groups if available */}
+																		{result.endpointGroups && (
+																			<span className="text-xs text-muted-foreground ml-2">
+																				[
+																				{Object.entries(
+																					result.endpointGroups
+																				)
+																					.filter(
+																						([
+																							_,
+																							count,
+																						]) =>
+																							Number(
+																								count
+																							) >
+																							0
+																					)
+																					.map(
+																						([
+																							method,
+																							count,
+																						]) =>
+																							`${method}: ${count}`
+																					)
+																					.join(
+																						", "
+																					)}
+
+																				]
+																			</span>
+																		)}
+																	</span>
 																) : (
-																	result.url
+																	// For regular tests, show URL
+																	<>
+																		{result.url &&
+																		result
+																			.url
+																			.length >
+																			40 ? (
+																			<>
+																				<span>
+																					{result.url.substring(
+																						0,
+																						40
+																					)}
+																					<span className="text-primary">
+																						...
+																					</span>
+																				</span>
+																				<div className="absolute left-0 top-full mt-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 invisible group-hover:visible">
+																					<div className="bg-popover shadow-md rounded-md p-2 text-sm border max-w-md break-all">
+																						{
+																							result.url
+																						}
+																					</div>
+																				</div>
+																			</>
+																		) : (
+																			result.url
+																		)}
+																	</>
 																)}
 															</div>
 														</td>
 														<td className="p-2 capitalize">
-															{result.type}
+															{result.type ===
+															"api-batch"
+																? "API Batch"
+																: result.type}
 														</td>
 														<td className="p-2">
 															<Badge
@@ -407,6 +742,9 @@ export default function Results() {
 																	result.status ===
 																	"completed"
 																		? "success"
+																		: result.status ===
+																		  "running"
+																		? "default"
 																		: "destructive"
 																}
 															>
@@ -419,10 +757,61 @@ export default function Results() {
 															).toLocaleString()}
 														</td>
 														<td className="p-2">
-															{result.passRate.toFixed(
-																1
+															{result.type ===
+															"api-batch" ? (
+																// For batch tests, show completion progress
+																<span>
+																	{result.completedEndpoints !==
+																		undefined &&
+																	result.totalEndpoints !==
+																		undefined
+																		? `${
+																				result.completedEndpoints
+																		  }/${
+																				result.totalEndpoints
+																		  } (${Math.round(
+																				(result.completedEndpoints /
+																					result.totalEndpoints) *
+																					100
+																		  )}%)`
+																		: "N/A"}
+																</span>
+															) : result.name ===
+																	"Unified API Test" &&
+															  result.status ===
+																	"running" ? (
+																// For unified tests in progress, show completion progress
+																<span>
+																	{result.completedEndpoints !==
+																		undefined &&
+																	result.totalEndpoints !==
+																		undefined
+																		? `${
+																				result.completedEndpoints ||
+																				0
+																		  }/${
+																				result.totalEndpoints
+																		  } (${Math.round(
+																				((result.completedEndpoints ||
+																					0) /
+																					result.totalEndpoints) *
+																					100
+																		  )}%)`
+																		: "In progress..."}
+																</span>
+															) : (
+																// For regular tests, show pass rate
+																<span>
+																	{result.passRate !==
+																		undefined &&
+																	result.passRate !==
+																		null
+																		? `${result.passRate.toFixed(
+																				1
+																		  )}%`
+																		: "N/A"}
+																</span>
 															)}
-															%
 														</td>
 														<td className="p-2">
 															<div className="flex space-x-1">

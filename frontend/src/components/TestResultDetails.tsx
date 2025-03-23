@@ -6,7 +6,15 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Image as ImageIcon, Globe, Server } from "lucide-react";
+import {
+	Image as ImageIcon,
+	Globe,
+	Server,
+	BarChart,
+	ListChecks,
+	Clock,
+} from "lucide-react";
+import { StatCard } from "@/components/StatCard";
 
 interface TestResult {
 	type: string;
@@ -30,6 +38,8 @@ interface TestResult {
 	requestType?: string; // GET, POST, PUT, DELETE
 	elementPath?: string; // DOM path of the element
 	action?: string; // Action performed on the element
+	endpointName?: string; // Added for unified tests
+	method?: string; // Added for unified tests
 }
 
 interface TestResultDetailsProps {
@@ -43,6 +53,16 @@ interface TestResultDetailsProps {
 		passRate: number;
 		duration: number;
 		testResults: TestResult[];
+		name?: string;
+		totalEndpoints?: number;
+		completedEndpoints?: number;
+		endpoints?: {
+			url?: string;
+			name?: string;
+			method?: string;
+			status?: string;
+			testId?: string;
+		}[];
 	};
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -60,6 +80,9 @@ export function TestResultDetails({
 	const formatDuration = (seconds: number) => {
 		return `${seconds.toFixed(2)}s`;
 	};
+
+	// Check if this is a batch test result
+	const isBatchTest = result.type === "api-batch";
 
 	// Function to get badge variant based on request type
 	const getRequestTypeBadgeVariant = (requestType?: string) => {
@@ -344,22 +367,31 @@ export function TestResultDetails({
 			<DialogContent className="max-w-[95vw] md:max-w-4xl h-[90vh] overflow-hidden">
 				<DialogHeader>
 					<DialogTitle className="text-base md:text-lg relative group">
-						<span className="line-clamp-1 overflow-ellipsis">
-							Test Results for{" "}
-							{result.url.length > 40 ? (
-								<>
-									{result.url.substring(0, 40)}
-									<span className="text-primary">...</span>
-									<div className="absolute left-0 top-full mt-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 invisible group-hover:visible">
-										<div className="bg-popover shadow-md rounded-md p-2 text-sm border max-w-md break-all">
-											{result.url}
+						{isBatchTest ? (
+							<span>
+								Batch Test Results:{" "}
+								{result.name || "API Batch Test"}
+							</span>
+						) : (
+							<span className="line-clamp-1 overflow-ellipsis">
+								Test Results for{" "}
+								{result.url && result.url.length > 40 ? (
+									<>
+										{result.url.substring(0, 40)}
+										<span className="text-primary">
+											...
+										</span>
+										<div className="absolute left-0 top-full mt-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 invisible group-hover:visible">
+											<div className="bg-popover shadow-md rounded-md p-2 text-sm border max-w-md break-all">
+												{result.url}
+											</div>
 										</div>
-									</div>
-								</>
-							) : (
-								result.url
-							)}
-						</span>
+									</>
+								) : (
+									result.url
+								)}
+							</span>
+						)}
 					</DialogTitle>
 				</DialogHeader>
 				<div className="space-y-4 h-full overflow-hidden flex flex-col">
@@ -367,7 +399,7 @@ export function TestResultDetails({
 						<div>
 							<h3 className="font-medium">Test Type</h3>
 							<p className="text-sm text-muted-foreground capitalize">
-								{result.type}
+								{isBatchTest ? "API Batch Test" : result.type}
 							</p>
 						</div>
 						<div>
@@ -376,6 +408,8 @@ export function TestResultDetails({
 								variant={
 									result.status === "completed"
 										? "success"
+										: result.status === "running"
+										? "default"
 										: "destructive"
 								}
 							>
@@ -388,164 +422,531 @@ export function TestResultDetails({
 								{formatDate(result.date)}
 							</p>
 						</div>
-						<div>
-							<h3 className="font-medium">Duration</h3>
-							<p className="text-sm text-muted-foreground">
-								{formatDuration(result.duration)}
-							</p>
-						</div>
-						<div>
-							<h3 className="font-medium">Tests Run</h3>
-							<p className="text-sm text-muted-foreground">
-								{result.testsRun}
-							</p>
-						</div>
-						<div>
-							<h3 className="font-medium">Pass Rate</h3>
-							<p className="text-sm text-muted-foreground">
-								{result.passRate.toFixed(1)}%
-							</p>
-						</div>
+
+						{isBatchTest ? (
+							// Batch specific metrics
+							<>
+								<div>
+									<h3 className="font-medium">
+										Total Endpoints
+									</h3>
+									<p className="text-sm text-muted-foreground">
+										{result.totalEndpoints || 0}
+									</p>
+								</div>
+								<div>
+									<h3 className="font-medium">Completed</h3>
+									<p className="text-sm text-muted-foreground">
+										{result.completedEndpoints || 0} /{" "}
+										{result.totalEndpoints || 0}(
+										{result.completedEndpoints &&
+										result.totalEndpoints
+											? Math.round(
+													(result.completedEndpoints /
+														result.totalEndpoints) *
+														100
+											  )
+											: 0}
+										%)
+									</p>
+								</div>
+							</>
+						) : (
+							// Regular test metrics
+							<>
+								<div>
+									<h3 className="font-medium">Duration</h3>
+									<p className="text-sm text-muted-foreground">
+										{result.duration !== undefined
+											? formatDuration(result.duration)
+											: "N/A"}
+									</p>
+								</div>
+								<div>
+									<h3 className="font-medium">Tests Run</h3>
+									<p className="text-sm text-muted-foreground">
+										{result.testsRun !== undefined
+											? result.testsRun
+											: 0}
+									</p>
+								</div>
+								<div>
+									<h3 className="font-medium">Pass Rate</h3>
+									<p className="text-sm text-muted-foreground">
+										{result.passRate !== undefined
+											? `${result.passRate.toFixed(1)}%`
+											: "N/A"}
+									</p>
+								</div>
+							</>
+						)}
 					</div>
 
 					<div className="flex-1 min-h-[500px]">
-						<h3 className="font-medium mb-2">Test Results</h3>
-						{result.testResults ? (
-							<ScrollArea className="h-[calc(90vh-320px)] rounded-md border">
-								<div className="p-4 space-y-4">
-									{result.testResults.map((test, index) => (
-										<div
-											key={index}
-											className="border rounded-lg p-3 md:p-4 w-full"
-										>
-											<div className="flex justify-between gap-2 mb-3">
-												<h4 className="font-medium capitalize">
-													{test.type}
-												</h4>
-												<Badge
-													variant={
-														test.status === "passed"
-															? "success"
-															: "destructive"
-													}
-													className="w-fit"
-												>
-													{test.status}
-												</Badge>
-											</div>
-
-											{/* API Endpoint Information - Show for API tests */}
-											{result.type === "api" && (
-												<div className="mb-3 bg-muted/50 p-2 rounded-md">
-													<div className="flex items-center gap-2 mb-1 flex-wrap">
-														<Server className="h-4 w-4" />
-														<span className="text-sm font-medium">
-															API Endpoint:
-														</span>
-
-														{test.requestType && (
-															<Badge
-																variant={getRequestTypeBadgeVariant(
-																	test.requestType
+						{isBatchTest ? (
+							// Batch test results showing endpoints
+							<>
+								<h3 className="font-medium mb-2">
+									Endpoint Tests
+								</h3>
+								{result.endpoints &&
+								result.endpoints.length > 0 ? (
+									<ScrollArea className="h-[calc(90vh-320px)] rounded-md border">
+										<div className="p-4 space-y-4">
+											{result.endpoints.map(
+												(
+													endpoint: any,
+													index: number
+												) => (
+													<div
+														key={index}
+														className="border rounded-lg p-3 md:p-4 w-full"
+													>
+														<div className="flex justify-between gap-2 mb-3">
+															<h4 className="font-medium">
+																{endpoint.url ? (
+																	<>
+																		<Badge
+																			variant={getRequestTypeBadgeVariant(
+																				endpoint.method
+																			)}
+																			className="mr-2 text-xs"
+																		>
+																			{
+																				endpoint.method
+																			}
+																		</Badge>
+																		{
+																			endpoint.url
+																		}
+																	</>
+																) : (
+																	endpoint.name ||
+																	`Endpoint ${
+																		index +
+																		1
+																	}`
 																)}
-																className="text-xs"
+															</h4>
+															<Badge
+																variant={
+																	endpoint.status ===
+																	"completed"
+																		? "success"
+																		: endpoint.status ===
+																		  "running"
+																		? "default"
+																		: "destructive"
+																}
+																className="w-fit"
 															>
-																{test.requestType.toUpperCase()}
+																{endpoint.status ||
+																	"unknown"}
 															</Badge>
+														</div>
+
+														{/* Link to view full results */}
+														{endpoint.testId && (
+															<div className="text-right mt-2">
+																<a
+																	href={`/results?id=${endpoint.testId}`}
+																	className="text-xs text-primary hover:underline"
+																	onClick={(
+																		e
+																	) => {
+																		e.stopPropagation();
+																	}}
+																>
+																	View
+																	detailed
+																	results →
+																</a>
+															</div>
 														)}
 													</div>
-													<p className="text-sm text-muted-foreground break-all pl-6">
-														{test.endpoint ||
-															"Unknown endpoint"}
-													</p>
-												</div>
-											)}
-
-											{/* Element Information */}
-											<div className="mb-3">
-												<p className="text-sm text-muted-foreground mb-2 break-all">
-													Element: {test.element}
-												</p>
-
-												{/* Element Path Information */}
-												{test.elementPath && (
-													<p className="text-sm text-muted-foreground mb-2">
-														<span className="font-medium">
-															Path:
-														</span>{" "}
-														{test.elementPath}
-													</p>
-												)}
-
-												{/* Action Information */}
-												{test.action && (
-													<p className="text-sm text-muted-foreground mb-2">
-														<span className="font-medium">
-															Action:
-														</span>{" "}
-														{test.action}
-													</p>
-												)}
-
-												{/* Element Preview */}
-												{renderElementPreview(test)}
-											</div>
-
-											{/* API-specific information */}
-											{test.statusCode && (
-												<p className="text-sm text-muted-foreground mb-2">
-													Status Code:{" "}
-													{test.statusCode}
-												</p>
-											)}
-											{test.duration && (
-												<p className="text-sm text-muted-foreground mb-2">
-													Duration:{" "}
-													{formatDuration(
-														test.duration
-													)}
-												</p>
-											)}
-											{test.responseSize && (
-												<p className="text-sm text-muted-foreground mb-2">
-													Response Size:{" "}
-													{(
-														test.responseSize / 1024
-													).toFixed(2)}{" "}
-													KB
-												</p>
-											)}
-											{test.averageTime && (
-												<p className="text-sm text-muted-foreground mb-2">
-													Average Time:{" "}
-													{formatDuration(
-														test.averageTime
-													)}
-												</p>
-											)}
-											{test.minTime && test.maxTime && (
-												<p className="text-sm text-muted-foreground mb-2">
-													Time Range:{" "}
-													{formatDuration(
-														test.minTime
-													)}{" "}
-													-{" "}
-													{formatDuration(
-														test.maxTime
-													)}
-												</p>
-											)}
-											{test.error && (
-												<p className="text-sm text-destructive mt-2 break-words">
-													Error: {test.error}
-												</p>
+												)
 											)}
 										</div>
-									))}
-								</div>
-							</ScrollArea>
+									</ScrollArea>
+								) : (
+									<div className="h-[calc(90vh-320px)] rounded-md border flex items-center justify-center">
+										<p className="text-muted-foreground">
+											No endpoint information available
+										</p>
+									</div>
+								)}
+							</>
 						) : (
-							"Nothing to show"
+							// Normal test results
+							<>
+								<h3 className="font-medium mb-2">
+									Test Results
+								</h3>
+								{result.type === "api" &&
+								result.name === "Unified API Test" &&
+								result.testResults ? (
+									// Unified test view - group results by endpoint
+									<ScrollArea className="h-[calc(90vh-320px)] rounded-md border">
+										<div className="p-4 space-y-6">
+											{/* Group results by endpoint */}
+											{(() => {
+												// Group tests by endpoint
+												const endpointGroups =
+													result.testResults.reduce(
+														(
+															groups: any,
+															test: any
+														) => {
+															const key =
+																test.endpointName ||
+																test.endpoint ||
+																"Unknown Endpoint";
+															if (!groups[key]) {
+																groups[key] =
+																	[];
+															}
+															groups[key].push(
+																test
+															);
+															return groups;
+														},
+														{}
+													);
+
+												// Return grouped test results
+												return Object.entries(
+													endpointGroups
+												).map(
+													([endpointName, tests]: [
+														string,
+														any
+													]) => (
+														<div
+															key={endpointName}
+															className="border-2 rounded-lg p-4"
+														>
+															<h4 className="font-medium text-lg mb-3">
+																{endpointName}
+															</h4>
+
+															{/* Show endpoint URL */}
+															{tests[0]
+																?.endpoint && (
+																<div className="mb-3 text-sm text-muted-foreground">
+																	<span className="font-medium">
+																		URL:{" "}
+																	</span>
+																	{
+																		tests[0]
+																			.endpoint
+																	}
+																</div>
+															)}
+
+															{/* Show method badge */}
+															{tests[0]
+																?.method && (
+																<div className="mb-3">
+																	<Badge
+																		variant={getRequestTypeBadgeVariant(
+																			tests[0]
+																				.method
+																		)}
+																	>
+																		{tests[0].method.toUpperCase()}
+																	</Badge>
+																</div>
+															)}
+
+															{/* Show test results for this endpoint */}
+															<div className="space-y-4 mt-4">
+																{tests.map(
+																	(
+																		test: any,
+																		index: number
+																	) => (
+																		<div
+																			key={
+																				index
+																			}
+																			className="border rounded-lg p-3 md:p-4 w-full"
+																		>
+																			<div className="flex justify-between gap-2 mb-3">
+																				<h5 className="font-medium capitalize">
+																					{
+																						test.type
+																					}
+																					{test.testType
+																						? ` - ${test.testType}`
+																						: ""}
+																				</h5>
+																				<Badge
+																					variant={
+																						test.status ===
+																						"passed"
+																							? "success"
+																							: "destructive"
+																					}
+																					className="w-fit"
+																				>
+																					{
+																						test.status
+																					}
+																				</Badge>
+																			</div>
+
+																			{/* Test details */}
+																			{test.description && (
+																				<p className="text-sm text-muted-foreground mb-2">
+																					{
+																						test.description
+																					}
+																				</p>
+																			)}
+
+																			{test.details && (
+																				<p className="text-sm text-muted-foreground mb-2">
+																					{
+																						test.details
+																					}
+																				</p>
+																			)}
+
+																			{/* Show specific test metrics */}
+																			{test.statusCode && (
+																				<p className="text-sm text-muted-foreground mb-2">
+																					Status
+																					Code:{" "}
+																					{
+																						test.statusCode
+																					}
+																				</p>
+																			)}
+
+																			{test.duration && (
+																				<p className="text-sm text-muted-foreground mb-2">
+																					Duration:{" "}
+																					{formatDuration(
+																						test.duration
+																					)}
+																				</p>
+																			)}
+
+																			{test.responseTime && (
+																				<p className="text-sm text-muted-foreground mb-2">
+																					Response
+																					Time:{" "}
+																					{test.responseTime.toFixed(
+																						2
+																					)}
+																					ms
+																				</p>
+																			)}
+
+																			{test.error && (
+																				<p className="text-sm text-destructive mt-2 break-words">
+																					Error:{" "}
+																					{
+																						test.error
+																					}
+																				</p>
+																			)}
+
+																			{/* Element Preview */}
+																			{renderElementPreview(
+																				test
+																			)}
+																		</div>
+																	)
+																)}
+															</div>
+														</div>
+													)
+												);
+											})()}
+										</div>
+									</ScrollArea>
+								) : result.testResults &&
+								  result.testResults.length > 0 ? (
+									<ScrollArea className="h-[calc(90vh-320px)] rounded-md border">
+										<div className="p-4 space-y-4">
+											{result.testResults.map(
+												(test, index) => (
+													<div
+														key={index}
+														className="border rounded-lg p-3 md:p-4 w-full"
+													>
+														<div className="flex justify-between gap-2 mb-3">
+															<h4 className="font-medium capitalize">
+																{test.type}
+															</h4>
+															<Badge
+																variant={
+																	test.status ===
+																	"passed"
+																		? "success"
+																		: "destructive"
+																}
+																className="w-fit"
+															>
+																{test.status}
+															</Badge>
+														</div>
+
+														{/* API Endpoint Information - Show for API tests */}
+														{result.type ===
+															"api" && (
+															<div className="mb-3 bg-muted/50 p-2 rounded-md">
+																<div className="flex items-center gap-2 mb-1 flex-wrap">
+																	<Server className="h-4 w-4" />
+																	<span className="text-sm font-medium">
+																		API
+																		Endpoint:
+																	</span>
+
+																	{test.requestType ? (
+																		<Badge
+																			variant={getRequestTypeBadgeVariant(
+																				test.requestType
+																			)}
+																			className="text-xs"
+																		>
+																			{test.requestType.toUpperCase()}
+																		</Badge>
+																	) : test.method ? (
+																		<Badge
+																			variant={getRequestTypeBadgeVariant(
+																				test.method
+																			)}
+																			className="text-xs"
+																		>
+																			{test.method.toUpperCase()}
+																		</Badge>
+																	) : null}
+																</div>
+
+																{/* Show endpoint name if available (for unified tests) */}
+																{test.endpointName && (
+																	<p className="text-sm font-medium text-primary pl-6 mb-1">
+																		{
+																			test.endpointName
+																		}
+																	</p>
+																)}
+
+																<p className="text-sm text-muted-foreground break-all pl-6">
+																	{test.endpoint ||
+																		"Unknown endpoint"}
+																</p>
+															</div>
+														)}
+
+														{/* Element Information */}
+														<div className="mb-3">
+															<p className="text-sm text-muted-foreground mb-2 break-all">
+																Element:{" "}
+																{test.element}
+															</p>
+
+															{/* Element Path Information */}
+															{test.elementPath && (
+																<p className="text-sm text-muted-foreground mb-2">
+																	<span className="font-medium">
+																		Path:
+																	</span>{" "}
+																	{
+																		test.elementPath
+																	}
+																</p>
+															)}
+
+															{/* Action Information */}
+															{test.action && (
+																<p className="text-sm text-muted-foreground mb-2">
+																	<span className="font-medium">
+																		Action:
+																	</span>{" "}
+																	{
+																		test.action
+																	}
+																</p>
+															)}
+
+															{/* Element Preview */}
+															{renderElementPreview(
+																test
+															)}
+														</div>
+
+														{/* API-specific information */}
+														{test.statusCode && (
+															<p className="text-sm text-muted-foreground mb-2">
+																Status Code:{" "}
+																{
+																	test.statusCode
+																}
+															</p>
+														)}
+														{test.duration && (
+															<p className="text-sm text-muted-foreground mb-2">
+																Duration:{" "}
+																{formatDuration(
+																	test.duration
+																)}
+															</p>
+														)}
+														{test.responseSize && (
+															<p className="text-sm text-muted-foreground mb-2">
+																Response Size:{" "}
+																{(
+																	test.responseSize /
+																	1024
+																).toFixed(
+																	2
+																)}{" "}
+																KB
+															</p>
+														)}
+														{test.averageTime && (
+															<p className="text-sm text-muted-foreground mb-2">
+																Average Time:{" "}
+																{formatDuration(
+																	test.averageTime
+																)}
+															</p>
+														)}
+														{test.minTime &&
+															test.maxTime && (
+																<p className="text-sm text-muted-foreground mb-2">
+																	Time Range:{" "}
+																	{formatDuration(
+																		test.minTime
+																	)}{" "}
+																	-{" "}
+																	{formatDuration(
+																		test.maxTime
+																	)}
+																</p>
+															)}
+														{test.error && (
+															<p className="text-sm text-destructive mt-2 break-words">
+																Error:{" "}
+																{test.error}
+															</p>
+														)}
+													</div>
+												)
+											)}
+										</div>
+									</ScrollArea>
+								) : (
+									<div className="h-[calc(90vh-320px)] rounded-md border flex items-center justify-center">
+										<p className="text-muted-foreground">
+											No test results available
+										</p>
+									</div>
+								)}
+							</>
 						)}
 					</div>
 				</div>
