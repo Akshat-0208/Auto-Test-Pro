@@ -12,7 +12,7 @@ class APITester:
     def __init__(self, endpoint, config):
         self.endpoint = endpoint
         self.config = config
-        self.client = MongoClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017/'))
+        self.client = MongoClient(os.getenv('MONGODB_URI', 'mongodb+srv://Ak:Aksssh990@cluster0.80egjyv.mongodb.net/'))
         self.db = self.client.autotester
         self.results_collection = self.db.results
         self.test_results = []
